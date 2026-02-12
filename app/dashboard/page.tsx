@@ -1,12 +1,12 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, Suspense } from 'react' // <--- Added Suspense
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import DatePicker from 'react-datepicker'
 import "react-datepicker/dist/react-datepicker.css"
-import OnboardingModal from '@/components/OnboardingModal' // <--- IMPORT THIS
+import OnboardingModal from '@/components/OnboardingModal'
 
 interface Trip {
   id: string
@@ -16,7 +16,8 @@ interface Trip {
   owner_id: string 
 }
 
-export default function Dashboard() {
+// 1. RENAME the main function to 'DashboardContent'
+function DashboardContent() {
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -32,7 +33,7 @@ export default function Dashboard() {
   const [user, setUser] = useState<any>(null)
   
   // UI State
-  const [showOnboarding, setShowOnboarding] = useState(false) // <--- NEW STATE
+  const [showOnboarding, setShowOnboarding] = useState(false)
   const [showNewTripModal, setShowNewTripModal] = useState(false)
   const [newTripName, setNewTripName] = useState('')
   const [newTripDates, setNewTripDates] = useState<[Date | null, Date | null]>([null, null])
@@ -61,7 +62,6 @@ export default function Dashboard() {
         if (!mounted) return
         setUser(session.user)
 
-        // --- NEW: PROFILE CHECK ---
         setDebugStatus('Checking Profile...')
         const { data: profile } = await supabase
           .from('profiles')
@@ -69,15 +69,13 @@ export default function Dashboard() {
           .eq('id', session.user.id)
           .single()
 
-        // If no profile or no name, trigger onboarding BEFORE processing trip
         if (!profile || !profile.full_name) {
           setDebugStatus('Profile incomplete. Starting onboarding...')
           setShowOnboarding(true)
-          setLoading(false) // Stop global spinner so modal shows
+          setLoading(false)
           return 
         }
 
-        // If profile exists, proceed to normal flow
         await handleRoutingLogic(session.user.id)
 
       } catch (err: any) {
@@ -91,7 +89,6 @@ export default function Dashboard() {
     return () => { mounted = false }
   }, []) 
 
-  // --- ORCHESTRATOR: Decides whether to create a trip or just fetch ---
   const handleRoutingLogic = async (userId: string) => {
     const tripNameParam = searchParams.get('tripName')
     
@@ -106,7 +103,6 @@ export default function Dashboard() {
     }
   }
 
-  // --- LOGIC: Create Trip from URL ---
   const createTripFromUrl = async (userId: string, name: string) => {
     try {
       const start = searchParams.get('start')
@@ -141,7 +137,6 @@ export default function Dashboard() {
     }
   }
 
-  // --- LOGIC: Fetch Trips ---
   const fetchTrips = async (userId: string) => {
     try {
       const { data: ownedTrips } = await supabase.from('trips').select('*').eq('owner_id', userId)
@@ -162,7 +157,6 @@ export default function Dashboard() {
     }
   }
 
-  // --- LOGIC: Modal Creation ---
   const handleCreateTrip = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newTripName || !startDate || !user) return
@@ -192,14 +186,12 @@ export default function Dashboard() {
     }
   }
 
-  // --- UPDATED: Roster Add with Profile Sync ---
   const addOwnerToRoster = async (userId: string, tripId: string) => {
     try {
-      // 1. Get Profile (We know it exists now because of the Onboarding Check!)
       const { data: profile } = await supabase.from('profiles').select('full_name, handicap').eq('id', userId).single()
       
       const displayName = profile?.full_name || 'Organizer'
-      const displayHcp = profile?.handicap ? Math.round(profile.handicap) : 0 // Ensure integer for smallint col
+      const displayHcp = profile?.handicap ? Math.round(profile.handicap) : 0 
 
       await supabase.from('trip_golfers').insert({
         trip_id: tripId,
@@ -233,12 +225,10 @@ export default function Dashboard() {
     return `${startMonth} ${startDay}, ${startYear} - ${endMonth} ${endDay}, ${endYear}`
   }
 
-  // --- ONBOARDING COMPLETE HANDLER ---
   const handleOnboardingComplete = async () => {
     setShowOnboarding(false)
     setLoading(true)
     if (user) {
-      // Resume the flow now that profile exists
       await handleRoutingLogic(user.id)
     }
   }
@@ -349,10 +339,19 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* --- ONBOARDING MODAL (The Missing Piece) --- */}
+      {/* --- ONBOARDING MODAL --- */}
       {showOnboarding && user && (
         <OnboardingModal userId={user.id} onComplete={handleOnboardingComplete} />
       )}
     </div>
+  )
+}
+
+// 2. CREATE A NEW DEFAULT EXPORT WRAPPED IN SUSPENSE
+export default function Dashboard() {
+  return (
+    <Suspense fallback={<div className="h-screen flex items-center justify-center bg-[#f9fbf9]"><div className="w-8 h-8 border-4 border-[#1a4d2e] border-t-transparent rounded-full animate-spin"></div></div>}>
+      <DashboardContent />
+    </Suspense>
   )
 }

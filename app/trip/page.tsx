@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr' // Changed to Browser Client
+import { useEffect, useState, Suspense } from 'react' // <--- Added Suspense
+import { createBrowserClient } from '@supabase/ssr' 
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Trip, Golfer, Round, Lodging, Dining, Expense, RoundWeather } from './types'
@@ -19,7 +19,8 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-export default function TripPage() {
+// 1. RENAME to TripPageContent
+function TripPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const tripId = searchParams.get('id')
@@ -41,29 +42,24 @@ export default function TripPage() {
     if (!tripId) return
     
     const init = async () => {
-      // 1. Fetch Trip Details
       const { data: tripData, error } = await supabase.from('trips').select('*').eq('id', tripId).single()
       
       if (error) console.error("Error fetching trip:", error)
       if (tripData) {
         setTrip(tripData)
-        // 2. SELF-HEALING: Check if Owner is in Roster
         await checkAndFixRoster(tripData)
       }
 
-      // 3. Load the rest of the data
       await refreshAll()
       setLoading(false)
     }
     init()
   }, [tripId])
 
-  // --- SELF-HEALING FUNCTION ---
   const checkAndFixRoster = async (tripData: Trip) => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user || user.id !== tripData.owner_id) return
 
-    // Check if I am already in the golfers list
     const { data: existingEntry } = await supabase
       .from('trip_golfers')
       .select('id')
@@ -74,7 +70,6 @@ export default function TripPage() {
     if (!existingEntry) {
       console.log("Owner missing from roster. Auto-fixing...")
       
-      // Get profile name to use
       const { data: profile } = await supabase.from('profiles').select('full_name, handicap').eq('id', user.id).single()
       
       await supabase.from('trip_golfers').insert({
@@ -84,7 +79,6 @@ export default function TripPage() {
         handicap: profile?.handicap ? Math.round(profile.handicap) : 0
       })
       
-      // Trigger a roster refresh immediately
       fetchRoster()
     }
   }
@@ -98,7 +92,6 @@ export default function TripPage() {
     const { data: rosterData } = await supabase.from('trip_golfers').select(`*, flights:golfer_flights(*)`).eq('trip_id', tripId)
     if (!rosterData) return
 
-    // Merge with Profile Data (for Avatar/Names)
     const userIds = rosterData.map(g => g.user_id).filter(uid => uid !== null)
     let profilesMap: Record<string, string> = {}
 
@@ -260,4 +253,13 @@ export default function TripPage() {
 function getIcon(tab: string) {
   const map: Record<string, string> = { Roster: 'groups', Golf: 'golf_course', Flight: 'flight', Lodging: 'bed', Dining: 'restaurant', Expenses: 'payments' }
   return map[tab]
+}
+
+// 2. EXPORT THE WRAPPER
+export default function TripPage() {
+  return (
+    <Suspense fallback={<div className="h-screen flex items-center justify-center bg-[#f8f8f5]"><div className="w-8 h-8 border-4 border-[#1a4d2e] border-t-transparent rounded-full animate-spin"></div></div>}>
+      <TripPageContent />
+    </Suspense>
+  )
 }
