@@ -146,7 +146,7 @@ export default function LandingPage() {
               <span className="material-symbols-outlined text-2xl">sports_golf</span>
             </div>
             <h2 className="text-white text-xl font-bold leading-tight tracking-tight font-display">
-              Fairway<span className="text-[#D4AF37]">Planner</span>
+              GolfTrip<span className="text-[#D4AF37]">HQ</span>
             </h2>
           </div>
           <div className="flex items-center gap-4">
@@ -293,7 +293,7 @@ export default function LandingPage() {
                 )}
                 
                 <div className="bg-gray-50 px-8 py-4 border-t border-gray-100 flex justify-center items-center">
-                  <div className="flex items-center gap-2 text-[#D4AF37] opacity-80"><span className="material-symbols-outlined text-sm">golf_course</span><span className="text-xs font-semibold tracking-wider uppercase">FairwayPlanner</span></div>
+                  <div className="flex items-center gap-2 text-[#D4AF37] opacity-80"><span className="material-symbols-outlined text-sm">golf_course</span><span className="text-xs font-semibold tracking-wider uppercase">GolfTripHQ</span></div>
                 </div>
               </div>
             </div>
@@ -365,14 +365,12 @@ export default function LandingPage() {
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2 text-[#0d2818] font-bold text-xl">
               <span className="material-symbols-outlined text-[#d4af37]">sports_golf</span>
-              <span>FairwayPlanner</span>
+              <span>GolfTripHQ</span>
             </div>
-            <p className="text-sm text-gray-500">© 2024 FairwayPlanner Inc. All rights reserved.</p>
+            <p className="text-sm text-gray-500">© 2026 GolfTripHQ Inc. All rights reserved.</p>
           </div>
           <div className="flex items-center gap-8 text-sm font-medium text-gray-600">
             <a className="hover:text-[#1a4d2e] transition-colors cursor-pointer">About</a>
-            <a className="hover:text-[#1a4d2e] transition-colors cursor-pointer">Features</a>
-            <a className="hover:text-[#1a4d2e] transition-colors cursor-pointer">Pricing</a>
             <a className="hover:text-[#1a4d2e] transition-colors cursor-pointer">Contact</a>
           </div>
           <div className="flex gap-4">

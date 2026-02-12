@@ -9,7 +9,7 @@ const jakarta = Plus_Jakarta_Sans({
 })
 
 export const metadata: Metadata = {
-  title: 'FairwayPlanner',
+  title: 'GolfTripHQ', // <--- UPDATED
   description: 'The easiest way to organize your golf trip.',
 }
 

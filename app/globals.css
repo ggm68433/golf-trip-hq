@@ -30,3 +30,26 @@ input::placeholder {
   color: #9ca3af; /* A nice light grey */
   opacity: 1;    /* Ensures the color shows correctly in Firefox */
 }
+
+/* ... existing code ... */
+
+/* ADD THIS BLOCK FOR ICONS */
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;  /* Default size */
+  display: inline-block;
+  line-height: 1;
+  text-transform: none;
+  letter-spacing: normal;
+  word-wrap: normal;
+  white-space: nowrap;
+  direction: ltr;
+  /* Support for all WebKit browsers. */
+  -webkit-font-smoothing: antialiased;
+  /* Support for Safari and Chrome. */
+  text-rendering: optimizeLegibility;
+  /* Support for Firefox. */
+  -moz-osx-font-smoothing: grayscale;
+}
