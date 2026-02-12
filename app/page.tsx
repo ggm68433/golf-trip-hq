@@ -182,9 +182,6 @@ export default function LandingPage() {
               <h1 className="text-white text-4xl sm:text-6xl font-black leading-tight tracking-tight drop-shadow-xl font-display">
                 Craft Your Perfect <br/> <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#D4AF37] to-[#e5c558]">Golf Getaway</span>
               </h1>
-              <p className="text-white/80 text-lg sm:text-xl font-normal max-w-xl mx-auto lg:mx-0 drop-shadow-md leading-relaxed">
-                Experience the effortless way to plan, book, and manage your group's next legendary round.
-              </p>
             </div>
 
             {/* Right Form Panel (Create Trip) */}
@@ -201,7 +198,7 @@ export default function LandingPage() {
                   </div>
                   <form onSubmit={handleStartPlanning} className="flex flex-col gap-5">
                     <div className="flex flex-col gap-2">
-                      <label className="text-xs font-bold uppercase tracking-wider text-gray-500">Where are you headed?</label>
+                      <label className="text-xs font-bold uppercase tracking-wider text-gray-500">Trip Name</label>
                       <div className="relative group">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#d4af37]"><span className="material-symbols-outlined">location_on</span></div>
                         <input value={location} onChange={(e) => setLocation(e.target.value)} className="w-full bg-white border border-gray-200 rounded-xl py-3 pl-10 pr-4 text-[#0d2818] placeholder:text-gray-400 focus:ring-2 focus:ring-[#d4af37] focus:border-[#d4af37] transition-all outline-none" placeholder="e.g. Pebble Beach" />
@@ -348,13 +345,13 @@ export default function LandingPage() {
                 Everything you need for the <span className="text-[#1a4d2e]">perfect round</span>
               </h2>
               <p className="text-gray-600 text-lg font-normal leading-relaxed">
-                Coordinate tee times, split expenses, and vote on courses all in one place.
+                Add tee times, split expenses, and manage travel all in one place.
               </p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              <FeatureCard icon="schedule" title="Coordinate Tee Times" desc="Easily schedule rounds for your entire group. Sync with local course availability and keep everyone on time." />
-              <FeatureCard icon="payments" title="Split Expenses" desc="Track who owes what and settle up instantly. From greens fees to the 19th hole, never lose track of a dollar." />
-              <FeatureCard icon="how_to_vote" title="Vote on Courses" desc="Let the group decide where to play next. Create polls for courses, restaurants, and activities seamlessly." />
+              <FeatureCard icon="schedule" title="Coordinate Tee Times" desc="Easily add rounds for your entire group and keep everyone on time." />
+              <FeatureCard icon="payments" title="Split Expenses" desc="Track all expenses for the trip in one convenient place. Our balance feature will do the math for you at the end of the trip." />
+              <FeatureCard icon="how_to_vote" title="Manage Travel" desc="Save flights, hotels, and other travel details for your group." />
             </div>
           </div>
         </div>
