@@ -3,10 +3,22 @@ import { NextResponse } from 'next/server'
 import { type CookieOptions, createServerClient } from '@supabase/ssr'
 
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url)
-  const code = searchParams.get('code')
-  const next = searchParams.get('next') ?? '/dashboard'
+  const requestUrl = new URL(request.url)
+  const code = requestUrl.searchParams.get('code')
+  const next = requestUrl.searchParams.get('next') ?? '/dashboard'
+  
+  // 1. Check for Supabase Errors (e.g. "Token expired", "Invalid token")
+  const error = requestUrl.searchParams.get('error')
+  const errorDescription = requestUrl.searchParams.get('error_description')
 
+  if (error || errorDescription) {
+    console.error('Supabase Auth Error:', error, errorDescription)
+    return NextResponse.redirect(
+      `${requestUrl.origin}/auth/auth-code-error?e=${encodeURIComponent(errorDescription || error || 'Unknown Supabase Error')}`
+    )
+  }
+
+  // 2. If we have a code, exchange it
   if (code) {
     const cookieStore = await cookies()
     const supabase = createServerClient(
@@ -21,18 +33,22 @@ export async function GET(request: Request) {
       }
     )
     
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    const { error: sessionError } = await supabase.auth.exchangeCodeForSession(code)
     
-    if (!error) {
-      return NextResponse.redirect(`${origin}${next}`)
+    if (!sessionError) {
+      // SUCCESS: Login complete, go to destination
+      return NextResponse.redirect(`${requestUrl.origin}${next}`)
     } else {
-      // 🚨 DEBUG: Log error to Vercel console
-      console.error("Auth Callback Error:", error)
-      // Pass the specific error message to the UI
-      return NextResponse.redirect(`${origin}/auth/auth-code-error?e=${encodeURIComponent(error.message)}`)
+      // Exchange failed
+      console.error("Session Exchange Error:", sessionError)
+      return NextResponse.redirect(
+        `${requestUrl.origin}/auth/auth-code-error?e=${encodeURIComponent(sessionError.message)}`
+      )
     }
   }
 
-  // If there was no code parameter at all
-  return NextResponse.redirect(`${origin}/auth/auth-code-error?e=NoCodeProvided`)
+  // 3. Fallback: No code and No error? (This is the mysterious "NoCodeProvided" case)
+  // We'll log the full URL params to see what IS there.
+  console.error("No Code/Error found. Params:", Object.fromEntries(requestUrl.searchParams))
+  return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error?e=NoCodeProvided_CheckLogs`)
 }
