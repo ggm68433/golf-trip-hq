@@ -19,14 +19,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // 2. Generate the Invite Link (Handles both New and Existing users automatically)
-    // We use 'invite' type which creates a user if they don't exist
+    // --- FIX STARTS HERE ---
+    // We must route through /auth/callback to exchange the token for a session
+    const nextPath = `/trip?id=${tripId}`
+    const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=${encodeURIComponent(nextPath)}`
+    // --- FIX ENDS HERE ---
+
+    // 2. Generate the Invite Link
     const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
       type: 'invite',
       email: email,
       options: {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/trip?id=${tripId}`,
-        data: { full_name: name } // Stores name in metadata if new user
+        redirectTo: redirectUrl, // <--- Updated to use the callback
+        data: { full_name: name }
       }
     })
 
@@ -49,7 +54,7 @@ export async function POST(req: Request) {
         .update({ 
           user_id: user.id,
           email: email,
-          status: 'invited' // <--- Mark as Pending
+          status: 'invited'
         })
         .eq('id', golferId)
 
@@ -57,7 +62,6 @@ export async function POST(req: Request) {
     }
 
     // 4. Send the Custom Email via Resend
-    // NOTE: Using your verified domain. If this fails, switch back to 'onboarding@resend.dev'
     const { error: emailError } = await resend.emails.send({
       from: 'GolfTripHQ <trips@golftriphq.com>', 
       to: [email],

@@ -1752,114 +1752,6 @@ export default function TripLodging({
 }
 </file>
 
-<file path="app/trip/types.ts">
-export interface Trip {
-  id: string
-  owner_id: string
-  trip_name: string
-  start_date: string
-  end_date: string
-  location?: string
-}
-
-export interface Golfer {
-  id: string
-  trip_id: string
-  user_id?: string | null
-  name: string
-  email?: string | null
-  handicap: number
-  profile_name?: string
-  is_driving?: boolean // Added for Flight Logic
-  flights?: Flight[]
-}
-
-export interface Flight {
-  id: string
-  golfer_id: string
-  trip_id: string
-  leg_type: 'arrival' | 'departure'
-  airline: string
-  flight_number: string
-  departure_airport: string
-  arrival_airport: string
-  departure_time: string
-  arrival_time: string
-}
-
-export interface Lodging {
-  id: string
-  trip_id: string
-  name: string
-  street_address: string
-  city?: string
-  state?: string
-  zip_code?: string
-  website_url?: string
-  check_in_time: string
-  check_out_time: string
-}
-
-export interface Dining {
-  id: string
-  trip_id: string
-  name: string
-  street_address: string
-  city?: string
-  state?: string
-  zip_code?: string
-  website_url?: string
-  reservation_time: string
-  party_size: number
-}
-
-export interface Expense {
-  id: string
-  trip_id: string
-  payer_id: string
-  description: string  // Changed from title
-  amount: number
-  expense_date: string
-  split_method: string
-  split_among?: string[] // Added array
-  created_at?: string
-}
-// ... rest of the types stay the same
-
-export interface Course {
-  id: string
-  name: string
-  address?: string
-  city?: string
-  state?: string
-  zip_code?: string
-}
-
-export interface Round {
-  id: string
-  trip_id: string
-  course_id: string
-  round_date: string
-  tee_time: string
-  courses?: Course
-  round_players?: {
-    trip_golfers: {
-      id: string
-      name: string
-      handicap: number
-    }
-  }[]
-}
-
-export interface RoundWeather {
-  temp: number | null
-  description: string
-  icon: string
-  wind_speed: number | null
-  pop: number | null // Probability of Precipitation
-}
-</file>
-
 <file path="components/ExpenseTracker.tsx">
 'use client'
 
@@ -3368,271 +3260,112 @@ export default function Dashboard() {
 }
 </file>
 
-<file path="app/trip/page.tsx">
-'use client'
-
-import { useEffect, useState, Suspense } from 'react' // <--- Added Suspense
-import { createBrowserClient } from '@supabase/ssr' 
-import { useRouter, useSearchParams } from 'next/navigation'
-import Link from 'next/link'
-import { Trip, Golfer, Round, Lodging, Dining, Expense, RoundWeather } from './types'
-
-// Components
-import TripRoster from './components/TripRoster'
-import TripGolf from './components/TripGolf'
-import TripFlights from './components/TripFlights'
-import TripLodging from './components/TripLodging'
-import TripDining from './components/TripDining'
-import TripExpenses from './components/TripExpenses'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
-
-// 1. RENAME to TripPageContent
-function TripPageContent() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const tripId = searchParams.get('id')
-
-  // Data State
-  const [trip, setTrip] = useState<Trip | null>(null)
-  const [golfers, setGolfers] = useState<Golfer[]>([])
-  const [rounds, setRounds] = useState<Round[]>([])
-  const [lodgings, setLodgings] = useState<Lodging[]>([])
-  const [dinings, setDinings] = useState<Dining[]>([])
-  const [expenses, setExpenses] = useState<Expense[]>([])
-  
-  // UI State
-  const [weatherMap, setWeatherMap] = useState<Record<string, RoundWeather>>({})
-  const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('Roster') 
-
-  useEffect(() => {
-    if (!tripId) return
-    
-    const init = async () => {
-      const { data: tripData, error } = await supabase.from('trips').select('*').eq('id', tripId).single()
-      
-      if (error) console.error("Error fetching trip:", error)
-      if (tripData) {
-        setTrip(tripData)
-        await checkAndFixRoster(tripData)
-      }
-
-      await refreshAll()
-      setLoading(false)
-    }
-    init()
-  }, [tripId])
-
-  const checkAndFixRoster = async (tripData: Trip) => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user || user.id !== tripData.owner_id) return
-
-    const { data: existingEntry } = await supabase
-      .from('trip_golfers')
-      .select('id')
-      .eq('trip_id', tripData.id)
-      .eq('user_id', user.id)
-      .single()
-
-    if (!existingEntry) {
-      console.log("Owner missing from roster. Auto-fixing...")
-      
-      const { data: profile } = await supabase.from('profiles').select('full_name, handicap').eq('id', user.id).single()
-      
-      await supabase.from('trip_golfers').insert({
-        trip_id: tripData.id,
-        user_id: user.id,
-        name: profile?.full_name || 'Organizer',
-        handicap: profile?.handicap ? Math.round(profile.handicap) : 0
-      })
-      
-      fetchRoster()
-    }
-  }
-
-  const refreshAll = async () => {
-    await Promise.all([fetchRoster(), fetchRounds(), fetchLodging(), fetchDining(), fetchExpenses()])
-  }
-
-  const fetchRoster = async () => {
-    if (!tripId) return
-    const { data: rosterData } = await supabase.from('trip_golfers').select(`*, flights:golfer_flights(*)`).eq('trip_id', tripId)
-    if (!rosterData) return
-
-    const userIds = rosterData.map(g => g.user_id).filter(uid => uid !== null)
-    let profilesMap: Record<string, string> = {}
-
-    if (userIds.length > 0) {
-      const { data: profiles } = await supabase.from('profiles').select('id, full_name').in('id', userIds)
-      if (profiles) profiles.forEach(p => profilesMap[p.id] = p.full_name)
-    }
-
-    setGolfers(rosterData.map(g => ({ ...g, profile_name: g.user_id ? profilesMap[g.user_id] : undefined })) as any)
-  }
-
-  const fetchRounds = async () => {
-    if (!tripId) return
-    const { data } = await supabase.from('rounds').select(`*, courses ( id, name, address, city, state, zip_code ), round_players ( trip_golfers ( id, name, handicap ) )`).eq('trip_id', tripId).order('round_date', { ascending: true }).order('tee_time', { ascending: true })
-    if (data) {
-      const roundsData = data as any
-      setRounds(roundsData)
-      fetchWeather(roundsData)
-    }
-  }
-
-  const fetchLodging = async () => {
-    if (!tripId) return
-    const { data } = await supabase.from('trip_lodging').select('*').eq('trip_id', tripId).order('check_in_time', { ascending: true })
-    if (data) setLodgings(data as any)
-  }
-
-  const fetchDining = async () => {
-    if (!tripId) return
-    const { data } = await supabase.from('trip_dining').select('*').eq('trip_id', tripId).order('reservation_time', { ascending: true })
-    if (data) setDinings(data as any)
-  }
-
-  const fetchExpenses = async () => {
-    if (!tripId) return
-    const { data } = await supabase.from('trip_expenses').select('*').eq('trip_id', tripId).order('expense_date', { ascending: false })
-    if (data) setExpenses(data as any)
-  }
-
-  const fetchWeather = async (roundsData: Round[]) => {
-    const apiKey = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY
-    if (!apiKey) return 
-
-    const newWeatherMap: Record<string, RoundWeather> = {}
-
-    await Promise.all(roundsData.map(async (round) => {
-      if (!round.courses?.city || !round.courses?.state || !round.round_date) return
-
-      try {
-        const geoUrl = `https://api.openweathermap.org/geo/1.0/direct?q=${round.courses.city},${round.courses.state},US&limit=1&appid=${apiKey}`
-        const geoRes = await fetch(geoUrl)
-        const geoData = await geoRes.json()
-
-        if (!geoData || geoData.length === 0) return
-
-        const { lat, lon } = geoData[0]
-        const weatherUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&units=imperial&appid=${apiKey}`
-        const weatherRes = await fetch(weatherUrl)
-        const weatherData = await weatherRes.json()
-
-        if (!weatherData.list) return
-
-        const targetDate = round.round_date 
-        const dayForecasts = weatherData.list.filter((item: any) => item.dt_txt.startsWith(targetDate))
-
-        if (dayForecasts.length > 0) {
-          const bestMatch = dayForecasts[Math.floor(dayForecasts.length / 2)]
-          newWeatherMap[round.id] = {
-            temp: Math.round(bestMatch.main.temp),
-            description: bestMatch.weather[0].main, 
-            icon: bestMatch.weather[0].icon,        
-            wind_speed: Math.round(bestMatch.wind.speed),
-            pop: Math.round(bestMatch.pop * 100)    
-          }
-        }
-      } catch (err) {
-        console.error("Weather fetch failed", err)
-      }
-    }))
-
-    setWeatherMap(newWeatherMap)
-  }
-
-  const formatDateRange = (startStr?: string, endStr?: string) => {
-    if (!startStr) return 'Date TBD'
-    
-    const parseLocal = (s: string) => {
-      const [y, m, d] = s.split('-').map(Number)
-      return new Date(y, m - 1, d)
-    }
-
-    const start = parseLocal(startStr)
-    const end = endStr ? parseLocal(endStr) : null
-
-    const startMonth = start.toLocaleString('en-US', { month: 'short' })
-    const startDay = start.getDate()
-    const year = start.getFullYear()
-
-    if (!end) return `${startMonth} ${startDay}, ${year}`
-
-    const endMonth = end.toLocaleString('en-US', { month: 'short' })
-    const endDay = end.getDate()
-    const endYear = end.getFullYear()
-
-    if (startMonth === endMonth && year === endYear) return `${startMonth} ${startDay} - ${endDay}, ${year}`
-    if (year === endYear) return `${startMonth} ${startDay} - ${endMonth} ${endDay}, ${year}`
-    return `${startMonth} ${startDay}, ${year} - ${endMonth} ${endDay}, ${endYear}`
-  }
-
-  if (loading) return <div className="h-screen flex items-center justify-center bg-[#f8f8f5]"><div className="w-8 h-8 border-4 border-[#1a4d2e] border-t-transparent rounded-full animate-spin"></div></div>
-
-  return (
-    <div className="flex h-screen overflow-hidden font-sans bg-[#f8f8f5] text-[#221f10]">
-      {/* Sidebar */}
-      <aside className="w-64 flex-shrink-0 bg-white border-r border-slate-200 flex flex-col justify-between z-20">
-        <div className="p-6">
-          <Link href="/dashboard" className="flex items-center gap-2 text-slate-500 hover:text-[#1a4d2e] mb-6 transition-colors group">
-            <span className="material-symbols-outlined text-lg group-hover:-translate-x-1 transition-transform">arrow_back</span>
-            <span className="text-xs font-bold uppercase tracking-wider">Back to Trips</span>
-          </Link>
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-10 h-10 rounded-full bg-[#1a4d2e] text-[#f2d00d] flex items-center justify-center shadow-md shrink-0"><span className="material-symbols-outlined">sports_golf</span></div>
-            <div>
-              <h1 className="text-slate-900 font-bold text-sm leading-tight line-clamp-2">{trip?.trip_name || 'Loading Trip...'}</h1>
-              <p className="text-slate-500 text-xs font-medium mt-0.5">
-                {formatDateRange(trip?.start_date, trip?.end_date)}
-              </p>
-            </div>
-          </div>
-          <nav className="flex flex-col gap-1">
-            {['Roster', 'Golf', 'Flight', 'Lodging', 'Dining', 'Expenses'].map(tab => (
-              <button key={tab} onClick={() => setActiveTab(tab)} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg w-full text-left transition-colors ${activeTab === tab ? 'bg-[#f2d00d]/20 text-[#1a4d2e] font-bold' : 'text-slate-600 hover:bg-slate-50 font-medium'}`}>
-                <span className="material-symbols-outlined text-[20px]">{getIcon(tab)}</span><span className="text-sm">{tab === 'Flight' ? 'Flight Info' : tab}</span>
-              </button>
-            ))}
-          </nav>
-        </div>
-        <div className="p-4 border-t border-slate-100">
-          <button className="flex items-center gap-3 w-full p-2 hover:bg-slate-50 rounded-lg transition-colors">
-            <div className="w-9 h-9 rounded-full bg-[#1a4d2e]/10 flex items-center justify-center text-[#1a4d2e] font-bold text-xs">ME</div>
-            <div className="text-left"><p className="text-sm font-bold text-slate-900">My Profile</p><p className="text-xs text-slate-500">View Settings</p></div>
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 overflow-y-auto bg-[#f8f8f5]">
-        {activeTab === 'Roster' && <TripRoster tripId={tripId!} golfers={golfers} tripOwnerId={trip?.owner_id} onUpdate={fetchRoster} />}
-        {activeTab === 'Golf' && <TripGolf tripId={tripId!} rounds={rounds} golfers={golfers} weatherMap={weatherMap} onUpdate={fetchRounds} />}
-        {activeTab === 'Flight' && <TripFlights tripId={tripId!} golfers={golfers} onUpdate={fetchRoster} />}
-        {activeTab === 'Lodging' && <TripLodging tripId={tripId!} lodgings={lodgings} trip={trip} onUpdate={fetchLodging} />}
-        {activeTab === 'Dining' && <TripDining tripId={tripId!} dinings={dinings} onUpdate={fetchDining} />}
-        {activeTab === 'Expenses' && <TripExpenses tripId={tripId!} expenses={expenses} golfers={golfers} onUpdate={fetchExpenses} />}
-      </main>
-    </div>
-  )
+<file path="app/trip/types.ts">
+export interface Trip {
+  id: string
+  owner_id: string
+  trip_name: string
+  start_date: string
+  end_date: string
+  location?: string
 }
 
-function getIcon(tab: string) {
-  const map: Record<string, string> = { Roster: 'groups', Golf: 'golf_course', Flight: 'flight', Lodging: 'bed', Dining: 'restaurant', Expenses: 'payments' }
-  return map[tab]
+export interface Golfer {
+  id: string
+  trip_id: string
+  user_id?: string | null
+  name: string
+  email?: string | null
+  handicap: number
+  profile_name?: string
+  is_driving?: boolean
+  flights?: Flight[]
+  status?: 'accepted' | 'invited' | 'declined' // <--- ADD THIS
 }
 
-// 2. EXPORT THE WRAPPER
-export default function TripPage() {
-  return (
-    <Suspense fallback={<div className="h-screen flex items-center justify-center bg-[#f8f8f5]"><div className="w-8 h-8 border-4 border-[#1a4d2e] border-t-transparent rounded-full animate-spin"></div></div>}>
-      <TripPageContent />
-    </Suspense>
-  )
+export interface Flight {
+  id: string
+  golfer_id: string
+  trip_id: string
+  leg_type: 'arrival' | 'departure'
+  airline: string
+  flight_number: string
+  departure_airport: string
+  arrival_airport: string
+  departure_time: string
+  arrival_time: string
+}
+
+export interface Lodging {
+  id: string
+  trip_id: string
+  name: string
+  street_address: string
+  city?: string
+  state?: string
+  zip_code?: string
+  website_url?: string
+  check_in_time: string
+  check_out_time: string
+}
+
+export interface Dining {
+  id: string
+  trip_id: string
+  name: string
+  street_address: string
+  city?: string
+  state?: string
+  zip_code?: string
+  website_url?: string
+  reservation_time: string
+  party_size: number
+}
+
+export interface Expense {
+  id: string
+  trip_id: string
+  payer_id: string
+  description: string  // Changed from title
+  amount: number
+  expense_date: string
+  split_method: string
+  split_among?: string[] // Added array
+  created_at?: string
+}
+// ... rest of the types stay the same
+
+export interface Course {
+  id: string
+  name: string
+  address?: string
+  city?: string
+  state?: string
+  zip_code?: string
+}
+
+export interface Round {
+  id: string
+  trip_id: string
+  course_id: string
+  round_date: string
+  tee_time: string
+  courses?: Course
+  round_players?: {
+    trip_golfers: {
+      id: string
+      name: string
+      handicap: number
+    }
+  }[]
+}
+
+export interface RoundWeather {
+  temp: number | null
+  description: string
+  icon: string
+  wind_speed: number | null
+  pop: number | null // Probability of Precipitation
 }
 </file>
 
@@ -3804,6 +3537,292 @@ The easiest way to deploy your Next.js app is to use the [Vercel Platform](https
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
 </file>
 
+<file path="app/trip/page.tsx">
+'use client'
+
+import { useEffect, useState, Suspense } from 'react'
+import { createBrowserClient } from '@supabase/ssr' 
+import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
+import { Trip, Golfer, Round, Lodging, Dining, Expense, RoundWeather } from './types'
+
+// Components
+import TripRoster from './components/TripRoster'
+import TripGolf from './components/TripGolf'
+import TripFlights from './components/TripFlights'
+import TripLodging from './components/TripLodging'
+import TripDining from './components/TripDining'
+import TripExpenses from './components/TripExpenses'
+
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+function TripPageContent() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const tripId = searchParams.get('id')
+
+  // Data State
+  const [trip, setTrip] = useState<Trip | null>(null)
+  const [golfers, setGolfers] = useState<Golfer[]>([])
+  const [rounds, setRounds] = useState<Round[]>([])
+  const [lodgings, setLodgings] = useState<Lodging[]>([])
+  const [dinings, setDinings] = useState<Dining[]>([])
+  const [expenses, setExpenses] = useState<Expense[]>([])
+  
+  // UI State
+  const [weatherMap, setWeatherMap] = useState<Record<string, RoundWeather>>({})
+  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState('Roster') 
+
+  useEffect(() => {
+    if (!tripId) return
+    
+    const init = async () => {
+      const { data: tripData, error } = await supabase.from('trips').select('*').eq('id', tripId).single()
+      
+      if (error) console.error("Error fetching trip:", error)
+      if (tripData) {
+        setTrip(tripData)
+        await checkAndFixRoster(tripData)
+      }
+
+      await refreshAll()
+      setLoading(false)
+    }
+    init()
+  }, [tripId])
+
+  const checkAndFixRoster = async (tripData: Trip) => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+
+    // 1. AUTO-ACCEPT: If user is "Invited", flip them to "Accepted" just by being here.
+    const { error: acceptError } = await supabase
+      .from('trip_golfers')
+      .update({ status: 'accepted' })
+      .eq('trip_id', tripData.id)
+      .eq('user_id', user.id)
+      .eq('status', 'invited')
+    
+    if (acceptError) console.error("Error accepting invite", acceptError)
+
+    // 2. SELF-HEALING: If Owner is missing from roster, add them.
+    if (user.id !== tripData.owner_id) return
+
+    const { data: existingEntry } = await supabase
+      .from('trip_golfers')
+      .select('id')
+      .eq('trip_id', tripData.id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (!existingEntry) {
+      console.log("Owner missing from roster. Auto-fixing...")
+      const { data: profile } = await supabase.from('profiles').select('full_name, handicap').eq('id', user.id).single()
+      
+      await supabase.from('trip_golfers').insert({
+        trip_id: tripData.id,
+        user_id: user.id,
+        name: profile?.full_name || 'Organizer',
+        handicap: profile?.handicap ? Math.round(profile.handicap) : 0,
+        status: 'accepted'
+      })
+      fetchRoster()
+    }
+  }
+
+  const refreshAll = async () => {
+    await Promise.all([fetchRoster(), fetchRounds(), fetchLodging(), fetchDining(), fetchExpenses()])
+  }
+
+  const fetchRoster = async () => {
+    if (!tripId) return
+    const { data: rosterData } = await supabase.from('trip_golfers').select(`*, flights:golfer_flights(*)`).eq('trip_id', tripId)
+    if (!rosterData) return
+
+    const userIds = rosterData.map(g => g.user_id).filter(uid => uid !== null)
+    let profilesMap: Record<string, string> = {}
+
+    if (userIds.length > 0) {
+      const { data: profiles } = await supabase.from('profiles').select('id, full_name').in('id', userIds)
+      if (profiles) profiles.forEach(p => profilesMap[p.id] = p.full_name)
+    }
+
+    setGolfers(rosterData.map(g => ({ ...g, profile_name: g.user_id ? profilesMap[g.user_id] : undefined })) as any)
+  }
+
+  const fetchRounds = async () => {
+    if (!tripId) return
+    const { data } = await supabase.from('rounds').select(`*, courses ( id, name, address, city, state, zip_code ), round_players ( trip_golfers ( id, name, handicap ) )`).eq('trip_id', tripId).order('round_date', { ascending: true }).order('tee_time', { ascending: true })
+    if (data) {
+      const roundsData = data as any
+      setRounds(roundsData)
+      fetchWeather(roundsData)
+    }
+  }
+
+  const fetchLodging = async () => {
+    if (!tripId) return
+    const { data } = await supabase.from('trip_lodging').select('*').eq('trip_id', tripId).order('check_in_time', { ascending: true })
+    if (data) setLodgings(data as any)
+  }
+
+  const fetchDining = async () => {
+    if (!tripId) return
+    const { data } = await supabase.from('trip_dining').select('*').eq('trip_id', tripId).order('reservation_time', { ascending: true })
+    if (data) setDinings(data as any)
+  }
+
+  const fetchExpenses = async () => {
+    if (!tripId) return
+    const { data } = await supabase.from('trip_expenses').select('*').eq('trip_id', tripId).order('expense_date', { ascending: false })
+    if (data) setExpenses(data as any)
+  }
+
+  const fetchWeather = async (roundsData: Round[]) => {
+    const apiKey = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY
+    if (!apiKey) return 
+
+    const newWeatherMap: Record<string, RoundWeather> = {}
+
+    await Promise.all(roundsData.map(async (round) => {
+      if (!round.courses?.city || !round.courses?.state || !round.round_date) return
+
+      try {
+        const geoUrl = `https://api.openweathermap.org/geo/1.0/direct?q=${round.courses.city},${round.courses.state},US&limit=1&appid=${apiKey}`
+        const geoRes = await fetch(geoUrl)
+        const geoData = await geoRes.json()
+
+        if (!geoData || geoData.length === 0) return
+
+        const { lat, lon } = geoData[0]
+        const weatherUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&units=imperial&appid=${apiKey}`
+        const weatherRes = await fetch(weatherUrl)
+        const weatherData = await weatherRes.json()
+
+        if (!weatherData.list) return
+
+        const targetDate = round.round_date 
+        const dayForecasts = weatherData.list.filter((item: any) => item.dt_txt.startsWith(targetDate))
+
+        if (dayForecasts.length > 0) {
+          const bestMatch = dayForecasts[Math.floor(dayForecasts.length / 2)]
+          newWeatherMap[round.id] = {
+            temp: Math.round(bestMatch.main.temp),
+            description: bestMatch.weather[0].main, 
+            icon: bestMatch.weather[0].icon,        
+            wind_speed: Math.round(bestMatch.wind.speed),
+            pop: Math.round(bestMatch.pop * 100)    
+          }
+        }
+      } catch (err) {
+        console.error("Weather fetch failed", err)
+      }
+    }))
+
+    setWeatherMap(newWeatherMap)
+  }
+
+  const formatDateRange = (startStr?: string, endStr?: string) => {
+    if (!startStr) return 'Date TBD'
+    
+    const parseLocal = (s: string) => {
+      const [y, m, d] = s.split('-').map(Number)
+      return new Date(y, m - 1, d)
+    }
+
+    const start = parseLocal(startStr)
+    const end = endStr ? parseLocal(endStr) : null
+
+    const startMonth = start.toLocaleString('en-US', { month: 'short' })
+    const startDay = start.getDate()
+    const year = start.getFullYear()
+
+    if (!end) return `${startMonth} ${startDay}, ${year}`
+
+    const endMonth = end.toLocaleString('en-US', { month: 'short' })
+    const endDay = end.getDate()
+    const endYear = end.getFullYear()
+
+    if (startMonth === endMonth && year === endYear) return `${startMonth} ${startDay} - ${endDay}, ${year}`
+    if (year === endYear) return `${startMonth} ${startDay} - ${endMonth} ${endDay}, ${year}`
+    return `${startMonth} ${startDay}, ${year} - ${endMonth} ${endDay}, ${endYear}`
+  }
+
+  if (loading) return <div className="h-screen flex items-center justify-center bg-[#f8f8f5]"><div className="w-8 h-8 border-4 border-[#1a4d2e] border-t-transparent rounded-full animate-spin"></div></div>
+
+  return (
+    <div className="flex h-screen overflow-hidden font-sans bg-[#f8f8f5] text-[#221f10]">
+      {/* Sidebar */}
+      <aside className="w-64 flex-shrink-0 bg-white border-r border-slate-200 flex flex-col justify-between z-20">
+        <div className="p-6">
+          <Link href="/dashboard" className="flex items-center gap-2 text-slate-500 hover:text-[#1a4d2e] mb-6 transition-colors group">
+            <span className="material-symbols-outlined text-lg group-hover:-translate-x-1 transition-transform">arrow_back</span>
+            <span className="text-xs font-bold uppercase tracking-wider">Back to Trips</span>
+          </Link>
+          <div className="flex items-center gap-3 mb-8">
+            <div className="w-10 h-10 rounded-full bg-[#1a4d2e] text-[#f2d00d] flex items-center justify-center shadow-md shrink-0"><span className="material-symbols-outlined">sports_golf</span></div>
+            <div>
+              <h1 className="text-slate-900 font-bold text-sm leading-tight line-clamp-2">{trip?.trip_name || 'Loading Trip...'}</h1>
+              <p className="text-slate-500 text-xs font-medium mt-0.5">
+                {formatDateRange(trip?.start_date, trip?.end_date)}
+              </p>
+            </div>
+          </div>
+          <nav className="flex flex-col gap-1">
+            {['Roster', 'Golf', 'Flight', 'Lodging', 'Dining', 'Expenses'].map(tab => (
+              <button key={tab} onClick={() => setActiveTab(tab)} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg w-full text-left transition-colors ${activeTab === tab ? 'bg-[#f2d00d]/20 text-[#1a4d2e] font-bold' : 'text-slate-600 hover:bg-slate-50 font-medium'}`}>
+                <span className="material-symbols-outlined text-[20px]">{getIcon(tab)}</span><span className="text-sm">{tab === 'Flight' ? 'Flight Info' : tab}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
+        <div className="p-4 border-t border-slate-100">
+          <button className="flex items-center gap-3 w-full p-2 hover:bg-slate-50 rounded-lg transition-colors">
+            <div className="w-9 h-9 rounded-full bg-[#1a4d2e]/10 flex items-center justify-center text-[#1a4d2e] font-bold text-xs">ME</div>
+            <div className="text-left"><p className="text-sm font-bold text-slate-900">My Profile</p><p className="text-xs text-slate-500">View Settings</p></div>
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 overflow-y-auto bg-[#f8f8f5]">
+        {activeTab === 'Roster' && (
+          <TripRoster 
+            tripId={tripId!} 
+            golfers={golfers} 
+            tripOwnerId={trip?.owner_id} 
+            tripName={trip?.trip_name} // <--- PASSING THE NAME
+            onUpdate={fetchRoster} 
+          />
+        )}
+        {activeTab === 'Golf' && <TripGolf tripId={tripId!} rounds={rounds} golfers={golfers} weatherMap={weatherMap} onUpdate={fetchRounds} />}
+        {activeTab === 'Flight' && <TripFlights tripId={tripId!} golfers={golfers} onUpdate={fetchRoster} />}
+        {activeTab === 'Lodging' && <TripLodging tripId={tripId!} lodgings={lodgings} trip={trip} onUpdate={fetchLodging} />}
+        {activeTab === 'Dining' && <TripDining tripId={tripId!} dinings={dinings} onUpdate={fetchDining} />}
+        {activeTab === 'Expenses' && <TripExpenses tripId={tripId!} expenses={expenses} golfers={golfers} onUpdate={fetchExpenses} />}
+      </main>
+    </div>
+  )
+}
+
+function getIcon(tab: string) {
+  const map: Record<string, string> = { Roster: 'groups', Golf: 'golf_course', Flight: 'flight', Lodging: 'bed', Dining: 'restaurant', Expenses: 'payments' }
+  return map[tab]
+}
+
+export default function TripPage() {
+  return (
+    <Suspense fallback={<div className="h-screen flex items-center justify-center bg-[#f8f8f5]"><div className="w-8 h-8 border-4 border-[#1a4d2e] border-t-transparent rounded-full animate-spin"></div></div>}>
+      <TripPageContent />
+    </Suspense>
+  )
+}
+</file>
+
 <file path="app/trip/components/TripRoster.tsx">
 'use client'
 
@@ -3829,30 +3848,86 @@ export default function TripRoster({
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
-  const [showAddModal, setShowAddModal] = useState(false)
+  // --- MODAL STATE ---
+  const [showModal, setShowModal] = useState(false)
   const [showInviteModal, setShowInviteModal] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [newHcp, setNewHcp] = useState('')
+  
+  // --- FORM STATE ---
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [formName, setFormName] = useState('')
+  const [formHcp, setFormHcp] = useState('')
+
+  // --- INVITE STATE ---
   const [inviteId, setInviteId] = useState<string | null>(null)
   const [inviteEmail, setInviteEmail] = useState('')
   const [sending, setSending] = useState(false)
 
-  const handleAddGolfer = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newName || !tripId) return
+  // --- ACTIONS ---
 
-    const { error } = await supabase.from('trip_golfers').insert({
-      trip_id: tripId, 
-      name: newName, 
-      handicap: newHcp ? parseFloat(newHcp) : 0 
-    })
+  const handleOpenAdd = () => {
+    setEditingId(null)
+    setFormName('')
+    setFormHcp('')
+    setShowModal(true)
+  }
+
+  const handleOpenEdit = (golfer: Golfer) => {
+    setEditingId(golfer.id)
+    setFormName(golfer.name)
+    setFormHcp(golfer.handicap.toString())
+    setShowModal(true)
+  }
+
+  const handleSaveGolfer = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!formName || !tripId) return
+
+    const payload = {
+      name: formName,
+      handicap: formHcp ? parseFloat(formHcp) : 0
+    }
+
+    let error
+
+    if (editingId) {
+      // EDIT EXISTING
+      const { error: updateError } = await supabase
+        .from('trip_golfers')
+        .update(payload)
+        .eq('id', editingId)
+      error = updateError
+    } else {
+      // ADD NEW
+      const { error: insertError } = await supabase
+        .from('trip_golfers')
+        .insert({
+          trip_id: tripId,
+          status: 'accepted', // Default to accepted for manual adds
+          ...payload
+        })
+      error = insertError
+    }
 
     if (error) {
-      alert(`Failed to add golfer: ${error.message}`)
+      alert(`Failed to save golfer: ${error.message}`)
     } else {
-      setNewName('')
-      setNewHcp('')
-      setShowAddModal(false)
+      setShowModal(false)
+      onUpdate()
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!editingId || !confirm('Are you sure you want to remove this golfer?')) return
+    
+    const { error } = await supabase
+      .from('trip_golfers')
+      .delete()
+      .eq('id', editingId)
+
+    if (error) {
+      alert(`Error deleting: ${error.message}`)
+    } else {
+      setShowModal(false)
       onUpdate()
     }
   }
@@ -3914,6 +3989,16 @@ export default function TripRoster({
           
           return (
             <div key={golfer.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col items-center hover:shadow-md transition-shadow group relative">
+              
+              {/* EDIT BUTTON (Top Right) */}
+              <button 
+                onClick={() => handleOpenEdit(golfer)}
+                className="absolute top-3 right-3 p-1.5 text-slate-300 hover:text-[#1a4d2e] hover:bg-slate-50 rounded-full transition-colors opacity-0 group-hover:opacity-100"
+                title="Edit Golfer"
+              >
+                <span className="material-symbols-outlined text-lg">edit</span>
+              </button>
+
               <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-4 border-2 ${isOrganizer ? 'bg-[#1a4d2e]/10 border-[#f2d00d]/20 text-[#1a4d2e]' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
                 <span className="text-2xl font-bold tracking-wide">{getInitials(displayName)}</span>
               </div>
@@ -3926,17 +4011,22 @@ export default function TripRoster({
                   <p className="text-2xl font-bold text-slate-800">{golfer.handicap}</p>
                   <p className="text-xs text-slate-500 uppercase tracking-wide">HCP</p>
                 </div>
+                
+                {/* STATUS INDICATOR LOGIC */}
                 <div className="border-l border-slate-100 flex flex-col items-center justify-center">
-                  {golfer.user_id ? ( 
+                  {golfer.status === 'invited' ? (
+                    <button onClick={() => handleOpenInvite(golfer.id)} className="flex flex-col items-center hover:opacity-75 group">
+                      <div className="flex items-center gap-1 mb-1">
+                        <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-500">Pending</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 group-hover:text-amber-500 transition-colors">Resend?</span>
+                    </button>
+                  ) : golfer.user_id ? ( 
                     <div className="flex flex-col items-center">
                       <span className="material-symbols-outlined text-[#1a4d2e] text-xl">verified</span>
                       <span className="text-[10px] font-bold uppercase tracking-wider text-[#1a4d2e] mt-1">Verified</span>
                     </div>
-                  ) : golfer.email ? (
-                    <button onClick={() => handleOpenInvite(golfer.id)} className="flex flex-col items-center hover:opacity-75">
-                      <span className="material-symbols-outlined text-amber-500 text-xl">schedule</span>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-500 mt-1">Pending</span>
-                    </button>
                   ) : (
                     <button onClick={() => handleOpenInvite(golfer.id)} className="flex items-center justify-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-bold uppercase px-3 py-1.5 rounded-full transition-colors">
                       <span className="material-symbols-outlined text-xs">add</span> Invite
@@ -3948,7 +4038,8 @@ export default function TripRoster({
           )
         })}
 
-        <button onClick={() => setShowAddModal(true)} className="bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 p-6 flex flex-col items-center justify-center hover:border-[#1a4d2e] hover:bg-slate-100 transition-all group min-h-[280px]">
+        {/* ADD BUTTON */}
+        <button onClick={handleOpenAdd} className="bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 p-6 flex flex-col items-center justify-center hover:border-[#1a4d2e] hover:bg-slate-100 transition-all group min-h-[280px]">
           <div className="w-16 h-16 rounded-full bg-white border-2 border-slate-200 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
             <span className="material-symbols-outlined text-slate-400 group-hover:text-[#1a4d2e] text-3xl">add</span>
           </div>
@@ -3957,24 +4048,34 @@ export default function TripRoster({
         </button>
       </div>
 
-      {showAddModal && (
+      {/* --- MODAL: ADD / EDIT GOLFER --- */}
+      {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setShowAddModal(false)}></div>
+          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setShowModal(false)}></div>
           <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl overflow-hidden animate-[fadeInUp_0.2s_ease-out]">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+              <h3 className="text-xl font-bold text-[#0d2818]">{editingId ? 'Edit Golfer' : 'Add New Golfer'}</h3>
+              {editingId && (
+                <button onClick={handleDelete} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors" title="Delete Golfer">
+                  <span className="material-symbols-outlined text-lg">delete</span>
+                </button>
+              )}
+            </div>
             <div className="p-6">
-              <h3 className="text-xl font-bold text-[#0d2818] mb-4">Add New Golfer</h3>
-              <form onSubmit={handleAddGolfer} className="flex flex-col gap-4">
+              <form onSubmit={handleSaveGolfer} className="flex flex-col gap-4">
                 <div>
                   <label className="text-xs font-bold uppercase text-gray-500 mb-1 block">Name</label>
-                  <input autoFocus value={newName} onChange={e => setNewName(e.target.value)} className="w-full border border-gray-200 rounded-lg p-3 outline-none focus:ring-2 focus:ring-[#1a4d2e]" placeholder="e.g. Rory McIlroy" />
+                  <input autoFocus value={formName} onChange={e => setFormName(e.target.value)} className="w-full border border-gray-200 rounded-lg p-3 outline-none focus:ring-2 focus:ring-[#1a4d2e]" placeholder="e.g. Rory McIlroy" />
                 </div>
                 <div>
                   <label className="text-xs font-bold uppercase text-gray-500 mb-1 block">Handicap</label>
-                  <input type="number" step="0.1" value={newHcp} onChange={e => setNewHcp(e.target.value)} className="w-full border border-gray-200 rounded-lg p-3 outline-none focus:ring-2 focus:ring-[#1a4d2e]" placeholder="0.0" />
+                  <input type="number" step="0.1" value={formHcp} onChange={e => setFormHcp(e.target.value)} className="w-full border border-gray-200 rounded-lg p-3 outline-none focus:ring-2 focus:ring-[#1a4d2e]" placeholder="0.0" />
                 </div>
                 <div className="flex gap-2 mt-4">
-                  <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-3 text-gray-500 font-bold hover:bg-gray-50 rounded-lg">Cancel</button>
-                  <button type="submit" className="flex-1 py-3 bg-[#1a4d2e] text-white font-bold rounded-lg hover:bg-[#143a22]">Add Golfer</button>
+                  <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-3 text-gray-500 font-bold hover:bg-gray-50 rounded-lg">Cancel</button>
+                  <button type="submit" className="flex-1 py-3 bg-[#1a4d2e] text-white font-bold rounded-lg hover:bg-[#143a22]">
+                    {editingId ? 'Save Changes' : 'Add Golfer'}
+                  </button>
                 </div>
               </form>
             </div>
@@ -3982,6 +4083,7 @@ export default function TripRoster({
         </div>
       )}
 
+      {/* --- MODAL: INVITE --- */}
       {showInviteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setShowInviteModal(false)}></div>
@@ -4021,6 +4123,7 @@ import { Resend } from 'resend'
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 export async function POST(req: Request) {
+  // 1. Init "God Mode" Admin Client
   const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -4034,33 +4137,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // 1. Check if user exists, otherwise create them (silently)
-    const { data: { users }, error: listError } = await supabaseAdmin.auth.admin.listUsers()
-    const existingUser = users?.find(u => u.email === email)
-    
-    let userId = existingUser?.id
-
-    if (!existingUser) {
-      // Create user with "email_confirm: true" so they can log in immediately
-      const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
-        email: email,
-        email_confirm: true,
-        user_metadata: { full_name: name }
-      })
-      
-      if (createError) throw createError
-      userId = newUser.user.id
-    }
-
-    if (!userId) throw new Error("Failed to resolve User ID")
-
-    // 2. Generate a 'magiclink' (Login Link)
-    // This type just creates a link for an existing user. It does NOT try to send an email.
+    // 2. Generate the Invite Link (Handles both New and Existing users automatically)
+    // We use 'invite' type which creates a user if they don't exist
     const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'magiclink', 
+      type: 'invite',
       email: email,
       options: {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/trip?id=${tripId}`
+        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/trip?id=${tripId}`,
+        data: { full_name: name } // Stores name in metadata if new user
       }
     })
 
@@ -4069,24 +4153,31 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: linkError.message }, { status: 500 })
     }
 
-    const { properties } = linkData
+    const { user, properties } = linkData
     const action_link = properties?.action_link
 
     if (!action_link) {
       return NextResponse.json({ error: 'Failed to generate action link' }, { status: 500 })
     }
 
-    // 3. Link Golfer Profile
-    const { error: updateError } = await supabaseAdmin
-      .from('trip_golfers')
-      .update({ user_id: userId, email: email })
-      .eq('id', golferId)
+    // 3. Link the Golfer Row AND set Status to 'invited'
+    if (user) {
+      const { error: updateError } = await supabaseAdmin
+        .from('trip_golfers')
+        .update({ 
+          user_id: user.id,
+          email: email,
+          status: 'invited' // <--- Mark as Pending
+        })
+        .eq('id', golferId)
 
-    if (updateError) throw updateError
+      if (updateError) throw updateError
+    }
 
-    // 4. Send Email via Resend
+    // 4. Send the Custom Email via Resend
+    // NOTE: Using your verified domain. If this fails, switch back to 'onboarding@resend.dev'
     const { error: emailError } = await resend.emails.send({
-      from: 'GolfTripHQ <noreply@golftriphq.com>', 
+      from: 'GolfTripHQ <trips@golftriphq.com>', 
       to: [email],
       subject: `You're invited to ${tripName || 'a Golf Trip'}!`,
       html: `
