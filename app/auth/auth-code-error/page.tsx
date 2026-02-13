@@ -1,8 +1,13 @@
 'use client'
 
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
+import { Suspense } from 'react'
 
-export default function AuthErrorPage() {
+function ErrorContent() {
+  const searchParams = useSearchParams()
+  const errorMsg = searchParams.get('e')
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#f9fbf9] p-4">
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center border border-slate-100">
@@ -10,16 +15,30 @@ export default function AuthErrorPage() {
           <span className="material-symbols-outlined text-red-500 text-3xl">error_outline</span>
         </div>
         <h1 className="text-2xl font-bold text-slate-900 mb-2">Login Failed</h1>
-        <p className="text-slate-500 mb-8">
-          We couldn't verify your login link. It may have expired or been used already.
+        <p className="text-slate-500 mb-4">
+          We couldn't verify your login link.
         </p>
-        <Link 
-          href="/" 
-          className="inline-flex items-center justify-center w-full py-3 px-4 bg-[#1a4d2e] text-white font-bold rounded-xl hover:bg-[#0d2818] transition-colors"
-        >
+        
+        {/* 🚨 DEBUG: Display the actual error message */}
+        {errorMsg && (
+          <div className="bg-red-50 border border-red-100 text-red-700 p-4 rounded-lg text-sm font-mono mb-6 break-words text-left">
+            <strong>Debug Error:</strong><br/>
+            {errorMsg}
+          </div>
+        )}
+
+        <Link href="/" className="inline-flex items-center justify-center w-full py-3 px-4 bg-[#1a4d2e] text-white font-bold rounded-xl hover:bg-[#0d2818] transition-colors">
           Return Home
         </Link>
       </div>
     </div>
+  )
+}
+
+export default function AuthErrorPage() {
+  return (
+    <Suspense fallback={<div>Loading error...</div>}>
+      <ErrorContent />
+    </Suspense>
   )
 }
