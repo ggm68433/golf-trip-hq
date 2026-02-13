@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, Suspense } from 'react' // <--- Added Suspense
+import { useEffect, useState, Suspense } from 'react'
 import { createBrowserClient } from '@supabase/ssr' 
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -19,7 +19,6 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-// 1. RENAME to TripPageContent
 function TripPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -58,7 +57,20 @@ function TripPageContent() {
 
   const checkAndFixRoster = async (tripData: Trip) => {
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user || user.id !== tripData.owner_id) return
+    if (!user) return
+
+    // 1. AUTO-ACCEPT: If user is "Invited", flip them to "Accepted" just by being here.
+    const { error: acceptError } = await supabase
+      .from('trip_golfers')
+      .update({ status: 'accepted' })
+      .eq('trip_id', tripData.id)
+      .eq('user_id', user.id)
+      .eq('status', 'invited')
+    
+    if (acceptError) console.error("Error accepting invite", acceptError)
+
+    // 2. SELF-HEALING: If Owner is missing from roster, add them.
+    if (user.id !== tripData.owner_id) return
 
     const { data: existingEntry } = await supabase
       .from('trip_golfers')
@@ -69,16 +81,15 @@ function TripPageContent() {
 
     if (!existingEntry) {
       console.log("Owner missing from roster. Auto-fixing...")
-      
       const { data: profile } = await supabase.from('profiles').select('full_name, handicap').eq('id', user.id).single()
       
       await supabase.from('trip_golfers').insert({
         trip_id: tripData.id,
         user_id: user.id,
         name: profile?.full_name || 'Organizer',
-        handicap: profile?.handicap ? Math.round(profile.handicap) : 0
+        handicap: profile?.handicap ? Math.round(profile.handicap) : 0,
+        status: 'accepted'
       })
-      
       fetchRoster()
     }
   }
@@ -239,7 +250,15 @@ function TripPageContent() {
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto bg-[#f8f8f5]">
-        {activeTab === 'Roster' && <TripRoster tripId={tripId!} golfers={golfers} tripOwnerId={trip?.owner_id} onUpdate={fetchRoster} />}
+        {activeTab === 'Roster' && (
+          <TripRoster 
+            tripId={tripId!} 
+            golfers={golfers} 
+            tripOwnerId={trip?.owner_id} 
+            tripName={trip?.trip_name} // <--- PASSING THE NAME
+            onUpdate={fetchRoster} 
+          />
+        )}
         {activeTab === 'Golf' && <TripGolf tripId={tripId!} rounds={rounds} golfers={golfers} weatherMap={weatherMap} onUpdate={fetchRounds} />}
         {activeTab === 'Flight' && <TripFlights tripId={tripId!} golfers={golfers} onUpdate={fetchRoster} />}
         {activeTab === 'Lodging' && <TripLodging tripId={tripId!} lodgings={lodgings} trip={trip} onUpdate={fetchLodging} />}
@@ -255,7 +274,6 @@ function getIcon(tab: string) {
   return map[tab]
 }
 
-// 2. EXPORT THE WRAPPER
 export default function TripPage() {
   return (
     <Suspense fallback={<div className="h-screen flex items-center justify-center bg-[#f8f8f5]"><div className="w-8 h-8 border-4 border-[#1a4d2e] border-t-transparent rounded-full animate-spin"></div></div>}>

@@ -5,6 +5,7 @@ import { Resend } from 'resend'
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 export async function POST(req: Request) {
+  // 1. Init "God Mode" Admin Client
   const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -18,33 +19,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // 1. Check if user exists, otherwise create them (silently)
-    const { data: { users }, error: listError } = await supabaseAdmin.auth.admin.listUsers()
-    const existingUser = users?.find(u => u.email === email)
-    
-    let userId = existingUser?.id
-
-    if (!existingUser) {
-      // Create user with "email_confirm: true" so they can log in immediately
-      const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
-        email: email,
-        email_confirm: true,
-        user_metadata: { full_name: name }
-      })
-      
-      if (createError) throw createError
-      userId = newUser.user.id
-    }
-
-    if (!userId) throw new Error("Failed to resolve User ID")
-
-    // 2. Generate a 'magiclink' (Login Link)
-    // This type just creates a link for an existing user. It does NOT try to send an email.
+    // 2. Generate the Invite Link (Handles both New and Existing users automatically)
+    // We use 'invite' type which creates a user if they don't exist
     const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'magiclink', 
+      type: 'invite',
       email: email,
       options: {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/trip?id=${tripId}`
+        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/trip?id=${tripId}`,
+        data: { full_name: name } // Stores name in metadata if new user
       }
     })
 
@@ -53,24 +35,31 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: linkError.message }, { status: 500 })
     }
 
-    const { properties } = linkData
+    const { user, properties } = linkData
     const action_link = properties?.action_link
 
     if (!action_link) {
       return NextResponse.json({ error: 'Failed to generate action link' }, { status: 500 })
     }
 
-    // 3. Link Golfer Profile
-    const { error: updateError } = await supabaseAdmin
-      .from('trip_golfers')
-      .update({ user_id: userId, email: email })
-      .eq('id', golferId)
+    // 3. Link the Golfer Row AND set Status to 'invited'
+    if (user) {
+      const { error: updateError } = await supabaseAdmin
+        .from('trip_golfers')
+        .update({ 
+          user_id: user.id,
+          email: email,
+          status: 'invited' // <--- Mark as Pending
+        })
+        .eq('id', golferId)
 
-    if (updateError) throw updateError
+      if (updateError) throw updateError
+    }
 
-    // 4. Send Email via Resend
+    // 4. Send the Custom Email via Resend
+    // NOTE: Using your verified domain. If this fails, switch back to 'onboarding@resend.dev'
     const { error: emailError } = await resend.emails.send({
-      from: 'GolfTripHQ <noreply@golftriphq.com>', 
+      from: 'GolfTripHQ <trips@golftriphq.com>', 
       to: [email],
       subject: `You're invited to ${tripName || 'a Golf Trip'}!`,
       html: `

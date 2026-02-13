@@ -37,7 +37,8 @@ export default function TripRoster({
     const { error } = await supabase.from('trip_golfers').insert({
       trip_id: tripId, 
       name: newName, 
-      handicap: newHcp ? parseFloat(newHcp) : 0 
+      handicap: newHcp ? parseFloat(newHcp) : 0,
+      status: 'accepted' // Manual adds are accepted by default (placeholders)
     })
 
     if (error) {
@@ -119,18 +120,26 @@ export default function TripRoster({
                   <p className="text-2xl font-bold text-slate-800">{golfer.handicap}</p>
                   <p className="text-xs text-slate-500 uppercase tracking-wide">HCP</p>
                 </div>
+                
+                {/* STATUS INDICATOR LOGIC */}
                 <div className="border-l border-slate-100 flex flex-col items-center justify-center">
-                  {golfer.user_id ? ( 
+                  {golfer.status === 'invited' ? (
+                    /* CASE 1: PENDING */
+                    <button onClick={() => handleOpenInvite(golfer.id)} className="flex flex-col items-center hover:opacity-75 group">
+                      <div className="flex items-center gap-1 mb-1">
+                        <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-500">Pending</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 group-hover:text-amber-500 transition-colors">Resend?</span>
+                    </button>
+                  ) : golfer.user_id ? ( 
+                    /* CASE 2: VERIFIED */
                     <div className="flex flex-col items-center">
                       <span className="material-symbols-outlined text-[#1a4d2e] text-xl">verified</span>
                       <span className="text-[10px] font-bold uppercase tracking-wider text-[#1a4d2e] mt-1">Verified</span>
                     </div>
-                  ) : golfer.email ? (
-                    <button onClick={() => handleOpenInvite(golfer.id)} className="flex flex-col items-center hover:opacity-75">
-                      <span className="material-symbols-outlined text-amber-500 text-xl">schedule</span>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-500 mt-1">Pending</span>
-                    </button>
                   ) : (
+                    /* CASE 3: ADD INVITE */
                     <button onClick={() => handleOpenInvite(golfer.id)} className="flex items-center justify-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-bold uppercase px-3 py-1.5 rounded-full transition-colors">
                       <span className="material-symbols-outlined text-xs">add</span> Invite
                     </button>

@@ -15,8 +15,9 @@ export interface Golfer {
   email?: string | null
   handicap: number
   profile_name?: string
-  is_driving?: boolean // Added for Flight Logic
+  is_driving?: boolean
   flights?: Flight[]
+  status?: 'accepted' | 'invited' | 'declined' // <--- ADD THIS
 }
 
 export interface Flight {
