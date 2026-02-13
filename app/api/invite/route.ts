@@ -2,11 +2,9 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 
-// Initialize Resend with your API Key
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 export async function POST(req: Request) {
-  // Initialize Supabase Admin Client
   const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -20,13 +18,33 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // 1. Generate the Magic Link
+    // 1. Check if user exists, otherwise create them (silently)
+    const { data: { users }, error: listError } = await supabaseAdmin.auth.admin.listUsers()
+    const existingUser = users?.find(u => u.email === email)
+    
+    let userId = existingUser?.id
+
+    if (!existingUser) {
+      // Create user with "email_confirm: true" so they can log in immediately
+      const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
+        email: email,
+        email_confirm: true,
+        user_metadata: { full_name: name }
+      })
+      
+      if (createError) throw createError
+      userId = newUser.user.id
+    }
+
+    if (!userId) throw new Error("Failed to resolve User ID")
+
+    // 2. Generate a 'magiclink' (Login Link)
+    // This type just creates a link for an existing user. It does NOT try to send an email.
     const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'invite',
+      type: 'magiclink', 
       email: email,
       options: {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/trip?id=${tripId}`,
-        data: { full_name: name }
+        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/trip?id=${tripId}`
       }
     })
 
@@ -35,31 +53,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: linkError.message }, { status: 500 })
     }
 
-    // --- FIX IS HERE ---
-    // Extract user and properties (where action_link lives)
-    const { user, properties } = linkData
+    const { properties } = linkData
     const action_link = properties?.action_link
 
     if (!action_link) {
       return NextResponse.json({ error: 'Failed to generate action link' }, { status: 500 })
     }
 
-    // 2. Link the Golfer Row to this User ID immediately
-    if (user) {
-      const { error: updateError } = await supabaseAdmin
-        .from('trip_golfers')
-        .update({ 
-          user_id: user.id,
-          email: email 
-        })
-        .eq('id', golferId)
+    // 3. Link Golfer Profile
+    const { error: updateError } = await supabaseAdmin
+      .from('trip_golfers')
+      .update({ user_id: userId, email: email })
+      .eq('id', golferId)
 
-      if (updateError) throw updateError
-    }
+    if (updateError) throw updateError
 
-    // 3. Send the Custom Email via Resend
-    const { data: emailData, error: emailError } = await resend.emails.send({
-      from: 'GolfTripHQ <noreply@golftriphq.com>', // Update this once you verify your domain
+    // 4. Send Email via Resend
+    // (Update the 'from' address if you have a verified domain, otherwise use onboarding@resend.dev)
+    const { error: emailError } = await resend.emails.send({
+      from: 'GolfTripHQ <onboarding@resend.dev>', 
       to: [email],
       subject: `You're invited to ${tripName || 'a Golf Trip'}!`,
       html: `
@@ -69,7 +81,7 @@ export async function POST(req: Request) {
             You have been added to the roster for <strong>${tripName || 'an upcoming trip'}</strong>.
           </p>
           <p style="font-size: 16px; color: #374151; line-height: 1.5; margin-bottom: 24px;">
-            Click the button below to accept your invite, view the itinerary, and enter your handicap.
+            Click the button below to accept your invite and view the itinerary.
           </p>
           <a href="${action_link}" style="display: inline-block; background-color: #d4af37; color: #000; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
             Join Trip
