@@ -76,16 +76,19 @@ export default function TripRoster({
     if (!inviteId || !inviteEmail) return
 
     // 1. Call your API
-    const response = await fetch('/api/invite', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: inviteEmail,
-        tripId: tripId,
-        golferId: inviteId, // Pass the ID so we know who to link
-        name: golfers.find(g => g.id === inviteId)?.name || 'Golfer'
-      })
-    })
+// Inside handleInvite...
+const response = await fetch('/api/invite', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    email: inviteEmail,
+    tripId: tripId,
+    golferId: inviteId,
+    name: golfers.find(g => g.id === inviteId)?.name || 'Golfer',
+    // ADD THIS LINE:
+    tripName: 'Your Golf Trip' // Ideally pass the real trip name prop if available, or just a static string for now
+  })
+})
 
     const result = await response.json()
 
