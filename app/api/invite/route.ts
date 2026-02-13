@@ -59,7 +59,7 @@ export async function POST(req: Request) {
 
     // 3. Send the Custom Email via Resend
     const { data: emailData, error: emailError } = await resend.emails.send({
-      from: 'GolfTripHQ <onboarding@resend.dev>', // Update this once you verify your domain
+      from: 'GolfTripHQ <noreply@golftriphq.com>', // Update this once you verify your domain
       to: [email],
       subject: `You're invited to ${tripName || 'a Golf Trip'}!`,
       html: `

@@ -177,10 +177,9 @@ export default function LandingPage() {
             {/* Left Copy */}
             <div className="flex flex-col gap-6 text-center lg:text-left order-2 lg:order-1">
               <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#D4AF37]/20 backdrop-blur-sm border border-[#D4AF37]/40 text-[#e5c558] font-bold text-xs uppercase tracking-widest w-fit mx-auto lg:mx-0">
-                <span className="material-symbols-outlined text-sm">workspace_premium</span> Premium Golf Experiences
               </span>
               <h1 className="text-white text-4xl sm:text-6xl font-black leading-tight tracking-tight drop-shadow-xl font-display">
-                Craft Your Perfect <br/> <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#D4AF37] to-[#e5c558]">Golf Getaway</span>
+                Craft Your Ideal <br/> <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#D4AF37] to-[#e5c558]">Golf Getaway</span>
               </h1>
             </div>
 
@@ -342,7 +341,7 @@ export default function LandingPage() {
           <div className="max-w-7xl mx-auto flex flex-col gap-16 relative z-10">
             <div className="flex flex-col items-center text-center gap-4 max-w-3xl mx-auto">
               <h2 className="text-[#0d2818] text-3xl sm:text-4xl font-bold leading-tight tracking-tight">
-                Everything you need for the <span className="text-[#1a4d2e]">perfect round</span>
+                Everything you need to organize the<span className="text-[#1a4d2e]">perfect trip</span>
               </h2>
               <p className="text-gray-600 text-lg font-normal leading-relaxed">
                 Add tee times, split expenses, and manage travel all in one place.
@@ -350,7 +349,7 @@ export default function LandingPage() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               <FeatureCard icon="schedule" title="Coordinate Tee Times" desc="Easily add rounds for your entire group and keep everyone on time." />
-              <FeatureCard icon="payments" title="Split Expenses" desc="Track all expenses for the trip in one convenient place. Our balance feature will do the math for you at the end of the trip." />
+              <FeatureCard icon="payments" title="Split Expenses" desc="Track all expenses for the trip in one convenient place and easily calculate balances." />
               <FeatureCard icon="how_to_vote" title="Manage Travel" desc="Save flights, hotels, and other travel details for your group." />
             </div>
           </div>
@@ -371,8 +370,6 @@ export default function LandingPage() {
             <a className="hover:text-[#1a4d2e] transition-colors cursor-pointer">Contact</a>
           </div>
           <div className="flex gap-4">
-            <SocialIcon icon="podcasts" />
-            <SocialIcon icon="alternate_email" />
           </div>
         </div>
       </footer>
