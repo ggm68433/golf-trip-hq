@@ -76,7 +76,7 @@ export default function TripRoster({
         .from('trip_golfers')
         .insert({
           trip_id: tripId,
-          status: 'accepted', // Default to accepted for manual adds
+          status: null, // <--- CRITICAL FIX: Set to null so "Invite" button appears
           ...payload
         })
       error = insertError
@@ -189,6 +189,7 @@ export default function TripRoster({
                 {/* STATUS INDICATOR LOGIC */}
                 <div className="border-l border-slate-100 flex flex-col items-center justify-center">
                   {golfer.status === 'invited' ? (
+                    /* CASE 1: PENDING (Email Sent) */
                     <button onClick={() => handleOpenInvite(golfer.id)} className="flex flex-col items-center hover:opacity-75 group">
                       <div className="flex items-center gap-1 mb-1">
                         <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
@@ -197,11 +198,13 @@ export default function TripRoster({
                       <span className="text-[10px] text-slate-400 group-hover:text-amber-500 transition-colors">Resend?</span>
                     </button>
                   ) : golfer.user_id ? ( 
+                    /* CASE 2: VERIFIED (Joined) */
                     <div className="flex flex-col items-center">
                       <span className="material-symbols-outlined text-[#1a4d2e] text-xl">verified</span>
                       <span className="text-[10px] font-bold uppercase tracking-wider text-[#1a4d2e] mt-1">Verified</span>
                     </div>
                   ) : (
+                    /* CASE 3: NO STATUS (Manual Add) */
                     <button onClick={() => handleOpenInvite(golfer.id)} className="flex items-center justify-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-bold uppercase px-3 py-1.5 rounded-full transition-colors">
                       <span className="material-symbols-outlined text-xs">add</span> Invite
                     </button>
