@@ -69,9 +69,8 @@ export async function POST(req: Request) {
     if (updateError) throw updateError
 
     // 4. Send Email via Resend
-    // (Update the 'from' address if you have a verified domain, otherwise use onboarding@resend.dev)
     const { error: emailError } = await resend.emails.send({
-      from: 'GolfTripHQ <onboarding@resend.dev>', 
+      from: 'GolfTripHQ <noreply@golftriphq.com>', 
       to: [email],
       subject: `You're invited to ${tripName || 'a Golf Trip'}!`,
       html: `
