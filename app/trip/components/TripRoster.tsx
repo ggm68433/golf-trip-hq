@@ -22,31 +22,86 @@ export default function TripRoster({
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
-  const [showAddModal, setShowAddModal] = useState(false)
+  // --- MODAL STATE ---
+  const [showModal, setShowModal] = useState(false)
   const [showInviteModal, setShowInviteModal] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [newHcp, setNewHcp] = useState('')
+  
+  // --- FORM STATE ---
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [formName, setFormName] = useState('')
+  const [formHcp, setFormHcp] = useState('')
+
+  // --- INVITE STATE ---
   const [inviteId, setInviteId] = useState<string | null>(null)
   const [inviteEmail, setInviteEmail] = useState('')
   const [sending, setSending] = useState(false)
 
-  const handleAddGolfer = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newName || !tripId) return
+  // --- ACTIONS ---
 
-    const { error } = await supabase.from('trip_golfers').insert({
-      trip_id: tripId, 
-      name: newName, 
-      handicap: newHcp ? parseFloat(newHcp) : 0,
-      status: 'accepted' // Manual adds are accepted by default (placeholders)
-    })
+  const handleOpenAdd = () => {
+    setEditingId(null)
+    setFormName('')
+    setFormHcp('')
+    setShowModal(true)
+  }
+
+  const handleOpenEdit = (golfer: Golfer) => {
+    setEditingId(golfer.id)
+    setFormName(golfer.name)
+    setFormHcp(golfer.handicap.toString())
+    setShowModal(true)
+  }
+
+  const handleSaveGolfer = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!formName || !tripId) return
+
+    const payload = {
+      name: formName,
+      handicap: formHcp ? parseFloat(formHcp) : 0
+    }
+
+    let error
+
+    if (editingId) {
+      // EDIT EXISTING
+      const { error: updateError } = await supabase
+        .from('trip_golfers')
+        .update(payload)
+        .eq('id', editingId)
+      error = updateError
+    } else {
+      // ADD NEW
+      const { error: insertError } = await supabase
+        .from('trip_golfers')
+        .insert({
+          trip_id: tripId,
+          status: 'accepted', // Default to accepted for manual adds
+          ...payload
+        })
+      error = insertError
+    }
 
     if (error) {
-      alert(`Failed to add golfer: ${error.message}`)
+      alert(`Failed to save golfer: ${error.message}`)
     } else {
-      setNewName('')
-      setNewHcp('')
-      setShowAddModal(false)
+      setShowModal(false)
+      onUpdate()
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!editingId || !confirm('Are you sure you want to remove this golfer?')) return
+    
+    const { error } = await supabase
+      .from('trip_golfers')
+      .delete()
+      .eq('id', editingId)
+
+    if (error) {
+      alert(`Error deleting: ${error.message}`)
+    } else {
+      setShowModal(false)
       onUpdate()
     }
   }
@@ -108,6 +163,16 @@ export default function TripRoster({
           
           return (
             <div key={golfer.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col items-center hover:shadow-md transition-shadow group relative">
+              
+              {/* EDIT BUTTON (Top Right) */}
+              <button 
+                onClick={() => handleOpenEdit(golfer)}
+                className="absolute top-3 right-3 p-1.5 text-slate-300 hover:text-[#1a4d2e] hover:bg-slate-50 rounded-full transition-colors opacity-0 group-hover:opacity-100"
+                title="Edit Golfer"
+              >
+                <span className="material-symbols-outlined text-lg">edit</span>
+              </button>
+
               <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-4 border-2 ${isOrganizer ? 'bg-[#1a4d2e]/10 border-[#f2d00d]/20 text-[#1a4d2e]' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
                 <span className="text-2xl font-bold tracking-wide">{getInitials(displayName)}</span>
               </div>
@@ -124,7 +189,6 @@ export default function TripRoster({
                 {/* STATUS INDICATOR LOGIC */}
                 <div className="border-l border-slate-100 flex flex-col items-center justify-center">
                   {golfer.status === 'invited' ? (
-                    /* CASE 1: PENDING */
                     <button onClick={() => handleOpenInvite(golfer.id)} className="flex flex-col items-center hover:opacity-75 group">
                       <div className="flex items-center gap-1 mb-1">
                         <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
@@ -133,13 +197,11 @@ export default function TripRoster({
                       <span className="text-[10px] text-slate-400 group-hover:text-amber-500 transition-colors">Resend?</span>
                     </button>
                   ) : golfer.user_id ? ( 
-                    /* CASE 2: VERIFIED */
                     <div className="flex flex-col items-center">
                       <span className="material-symbols-outlined text-[#1a4d2e] text-xl">verified</span>
                       <span className="text-[10px] font-bold uppercase tracking-wider text-[#1a4d2e] mt-1">Verified</span>
                     </div>
                   ) : (
-                    /* CASE 3: ADD INVITE */
                     <button onClick={() => handleOpenInvite(golfer.id)} className="flex items-center justify-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-bold uppercase px-3 py-1.5 rounded-full transition-colors">
                       <span className="material-symbols-outlined text-xs">add</span> Invite
                     </button>
@@ -150,7 +212,8 @@ export default function TripRoster({
           )
         })}
 
-        <button onClick={() => setShowAddModal(true)} className="bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 p-6 flex flex-col items-center justify-center hover:border-[#1a4d2e] hover:bg-slate-100 transition-all group min-h-[280px]">
+        {/* ADD BUTTON */}
+        <button onClick={handleOpenAdd} className="bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 p-6 flex flex-col items-center justify-center hover:border-[#1a4d2e] hover:bg-slate-100 transition-all group min-h-[280px]">
           <div className="w-16 h-16 rounded-full bg-white border-2 border-slate-200 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
             <span className="material-symbols-outlined text-slate-400 group-hover:text-[#1a4d2e] text-3xl">add</span>
           </div>
@@ -159,24 +222,34 @@ export default function TripRoster({
         </button>
       </div>
 
-      {showAddModal && (
+      {/* --- MODAL: ADD / EDIT GOLFER --- */}
+      {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setShowAddModal(false)}></div>
+          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setShowModal(false)}></div>
           <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl overflow-hidden animate-[fadeInUp_0.2s_ease-out]">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+              <h3 className="text-xl font-bold text-[#0d2818]">{editingId ? 'Edit Golfer' : 'Add New Golfer'}</h3>
+              {editingId && (
+                <button onClick={handleDelete} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors" title="Delete Golfer">
+                  <span className="material-symbols-outlined text-lg">delete</span>
+                </button>
+              )}
+            </div>
             <div className="p-6">
-              <h3 className="text-xl font-bold text-[#0d2818] mb-4">Add New Golfer</h3>
-              <form onSubmit={handleAddGolfer} className="flex flex-col gap-4">
+              <form onSubmit={handleSaveGolfer} className="flex flex-col gap-4">
                 <div>
                   <label className="text-xs font-bold uppercase text-gray-500 mb-1 block">Name</label>
-                  <input autoFocus value={newName} onChange={e => setNewName(e.target.value)} className="w-full border border-gray-200 rounded-lg p-3 outline-none focus:ring-2 focus:ring-[#1a4d2e]" placeholder="e.g. Rory McIlroy" />
+                  <input autoFocus value={formName} onChange={e => setFormName(e.target.value)} className="w-full border border-gray-200 rounded-lg p-3 outline-none focus:ring-2 focus:ring-[#1a4d2e]" placeholder="e.g. Rory McIlroy" />
                 </div>
                 <div>
                   <label className="text-xs font-bold uppercase text-gray-500 mb-1 block">Handicap</label>
-                  <input type="number" step="0.1" value={newHcp} onChange={e => setNewHcp(e.target.value)} className="w-full border border-gray-200 rounded-lg p-3 outline-none focus:ring-2 focus:ring-[#1a4d2e]" placeholder="0.0" />
+                  <input type="number" step="0.1" value={formHcp} onChange={e => setFormHcp(e.target.value)} className="w-full border border-gray-200 rounded-lg p-3 outline-none focus:ring-2 focus:ring-[#1a4d2e]" placeholder="0.0" />
                 </div>
                 <div className="flex gap-2 mt-4">
-                  <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-3 text-gray-500 font-bold hover:bg-gray-50 rounded-lg">Cancel</button>
-                  <button type="submit" className="flex-1 py-3 bg-[#1a4d2e] text-white font-bold rounded-lg hover:bg-[#143a22]">Add Golfer</button>
+                  <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-3 text-gray-500 font-bold hover:bg-gray-50 rounded-lg">Cancel</button>
+                  <button type="submit" className="flex-1 py-3 bg-[#1a4d2e] text-white font-bold rounded-lg hover:bg-[#143a22]">
+                    {editingId ? 'Save Changes' : 'Add Golfer'}
+                  </button>
                 </div>
               </form>
             </div>
@@ -184,6 +257,7 @@ export default function TripRoster({
         </div>
       )}
 
+      {/* --- MODAL: INVITE --- */}
       {showInviteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setShowInviteModal(false)}></div>
