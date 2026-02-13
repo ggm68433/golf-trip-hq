@@ -339,7 +339,7 @@ export default function LandingPage() {
           <div className="max-w-7xl mx-auto flex flex-col gap-16 relative z-10">
             <div className="flex flex-col items-center text-center gap-4 max-w-3xl mx-auto">
               <h2 className="text-[#0d2818] text-3xl sm:text-4xl font-bold leading-tight tracking-tight">
-                Everything you need to organize the your trip
+                Everything you need to organize your trip
               </h2>
               <p className="text-gray-600 text-lg font-normal leading-relaxed">
                 Add tee times, split expenses, and manage travel all in one place.
