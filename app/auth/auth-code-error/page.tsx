@@ -9,6 +9,9 @@ function ErrorContent() {
   const searchParams = useSearchParams()
   const errorMsg = searchParams.get('e') || 'Unknown error occurred'
   
+  // 1. Retrieve the preserved destination (default to /dashboard)
+  const nextUrl = searchParams.get('next') || '/dashboard'
+  
   // State for the recovery form
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
@@ -23,12 +26,14 @@ function ErrorContent() {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
 
+    // 2. Construct the redirect URL using the preserved 'nextUrl'
+    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(nextUrl)}`
+
     // We use signInWithOtp which acts as a "Magic Link" generator
-    // This works for both new users (Sign Up) and existing users (Sign In)
     const { error } = await supabase.auth.signInWithOtp({
       email: email,
       options: {
-        emailRedirectTo: `${location.origin}/auth/callback`
+        emailRedirectTo: redirectTo
       }
     })
 

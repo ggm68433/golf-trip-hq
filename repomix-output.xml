@@ -97,78 +97,6 @@ tsconfig.json
 <files>
 This section contains the contents of the repository's files.
 
-<file path="app/auth/auth-code-error/page.tsx">
-'use client'
-
-import Link from 'next/link'
-
-export default function AuthErrorPage() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-[#f9fbf9] p-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center border border-slate-100">
-        <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6">
-          <span className="material-symbols-outlined text-red-500 text-3xl">error_outline</span>
-        </div>
-        <h1 className="text-2xl font-bold text-slate-900 mb-2">Login Failed</h1>
-        <p className="text-slate-500 mb-8">
-          We couldn't verify your login link. It may have expired or been used already.
-        </p>
-        <Link 
-          href="/" 
-          className="inline-flex items-center justify-center w-full py-3 px-4 bg-[#1a4d2e] text-white font-bold rounded-xl hover:bg-[#0d2818] transition-colors"
-        >
-          Return Home
-        </Link>
-      </div>
-    </div>
-  )
-}
-</file>
-
-<file path="app/auth/callback/route.ts">
-import { cookies } from 'next/headers'
-import { NextResponse } from 'next/server'
-import { type CookieOptions, createServerClient } from '@supabase/ssr'
-
-export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url)
-  const code = searchParams.get('code')
-  // The 'next' param allows us to redirect to a specific page (like /dashboard) after login
-  const next = searchParams.get('next') ?? '/dashboard'
-
-  if (code) {
-    const cookieStore = await cookies()
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value
-          },
-          set(name: string, value: string, options: CookieOptions) {
-            cookieStore.set({ name, value, ...options })
-          },
-          remove(name: string, options: CookieOptions) {
-            cookieStore.delete({ name, ...options })
-          },
-        },
-      }
-    )
-    
-    // This exchanges the secure code for a session cookie
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
-    
-    if (!error) {
-      return NextResponse.redirect(`${origin}${next}`)
-    }
-  }
-
-  // If something breaks, send them to an error page
-  return NextResponse.redirect(`${origin}/auth/auth-code-error`)
-}
-</file>
-
 <file path="app/auth/signout/route.ts">
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
@@ -3537,6 +3465,195 @@ The easiest way to deploy your Next.js app is to use the [Vercel Platform](https
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
 </file>
 
+<file path="app/auth/auth-code-error/page.tsx">
+'use client'
+
+import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
+import { Suspense, useState } from 'react'
+import { createBrowserClient } from '@supabase/ssr'
+
+function ErrorContent() {
+  const searchParams = useSearchParams()
+  const errorMsg = searchParams.get('e') || 'Unknown error occurred'
+  
+  // State for the recovery form
+  const [email, setEmail] = useState('')
+  const [sent, setSent] = useState(false)
+  const [loading, setLoading] = useState(false)
+
+  const handleResend = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    
+    const supabase = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+
+    // We use signInWithOtp which acts as a "Magic Link" generator
+    // This works for both new users (Sign Up) and existing users (Sign In)
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email,
+      options: {
+        emailRedirectTo: `${location.origin}/auth/callback`
+      }
+    })
+
+    setLoading(false)
+    if (error) {
+      alert(`Error: ${error.message}`)
+    } else {
+      setSent(true)
+    }
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#f9fbf9] p-4 font-sans">
+      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 border border-slate-100 text-center">
+        
+        {/* HEADER ICON */}
+        <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6 ${sent ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-500'}`}>
+          <span className="material-symbols-outlined text-3xl">
+            {sent ? 'mark_email_read' : 'link_off'}
+          </span>
+        </div>
+
+        {sent ? (
+          // SUCCESS STATE
+          <>
+            <h1 className="text-2xl font-bold text-slate-900 mb-2">Link Sent!</h1>
+            <p className="text-slate-500 mb-6">
+              We sent a fresh login link to <strong>{email}</strong>. <br/>
+              Click it on <u>this device</u> to finish.
+            </p>
+            <Link href="/" className="inline-flex items-center justify-center w-full py-3 px-4 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors">
+              Return Home
+            </Link>
+          </>
+        ) : (
+          // ERROR + FORM STATE
+          <>
+            <h1 className="text-2xl font-bold text-slate-900 mb-2">Login Link Issue</h1>
+            <p className="text-slate-500 mb-4 text-sm">
+              Your link may have expired or was opened on a different device.
+            </p>
+
+            {/* ERROR DEBUGGER (Small) */}
+            <div className="bg-red-50 text-red-600 p-2 rounded text-xs font-mono mb-6 break-words border border-red-100">
+              {errorMsg}
+            </div>
+
+            {/* RECOVERY FORM - ALWAYS VISIBLE */}
+            <div className="bg-slate-50 p-5 rounded-xl text-left border border-slate-100">
+              <label className="text-slate-900 font-bold text-sm mb-2 block">
+                Send a new link to this device:
+              </label>
+              <form onSubmit={handleResend} className="flex flex-col gap-3">
+                <input 
+                  type="email" 
+                  placeholder="name@example.com" 
+                  className="w-full p-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1a4d2e] outline-none"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  required
+                />
+                <button 
+                  type="submit" 
+                  disabled={loading}
+                  className="w-full py-3 bg-[#1a4d2e] text-white font-bold rounded-lg hover:bg-[#143a22] disabled:opacity-50 transition-colors shadow-sm"
+                >
+                  {loading ? 'Sending...' : 'Send Magic Link'}
+                </button>
+              </form>
+            </div>
+            
+            <div className="mt-6">
+              <Link href="/" className="text-xs text-slate-400 hover:text-slate-600 font-medium">
+                Return to Home Page
+              </Link>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default function AuthErrorPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <ErrorContent />
+    </Suspense>
+  )
+}
+</file>
+
+<file path="app/auth/callback/route.ts">
+import { cookies } from 'next/headers'
+import { NextResponse } from 'next/server'
+import { type CookieOptions, createServerClient } from '@supabase/ssr'
+
+export async function GET(request: Request) {
+  const requestUrl = new URL(request.url)
+  const code = requestUrl.searchParams.get('code')
+  
+  // Default to /trip if no 'next' param is provided
+  const next = requestUrl.searchParams.get('next') ?? '/trip'
+  
+  // 1. Check for basic Supabase Errors
+  const error = requestUrl.searchParams.get('error')
+  const errorDescription = requestUrl.searchParams.get('error_description')
+  if (error || errorDescription) {
+    return NextResponse.redirect(
+      `${requestUrl.origin}/auth/auth-code-error?e=${encodeURIComponent(errorDescription || error || 'Unknown Error')}`
+    )
+  }
+
+  if (code) {
+    const cookieStore = await cookies()
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) { return cookieStore.get(name)?.value },
+          set(name: string, value: string, options: CookieOptions) { cookieStore.set({ name, value, ...options }) },
+          remove(name: string, options: CookieOptions) { cookieStore.delete({ name, ...options }) },
+        },
+      }
+    )
+    
+    // 2. Attempt to Exchange Code for Session
+    const { error: sessionError } = await supabase.auth.exchangeCodeForSession(code)
+    
+    if (!sessionError) {
+      // SUCCESS! Redirect to the intended destination (e.g., the trip page)
+      return NextResponse.redirect(`${requestUrl.origin}${next}`)
+    } 
+
+    // 3. SPECIAL HANDLING: Catch the "PKCE code verifier" error
+    // This happens when you have leftover cookies from a different login attempt.
+    if (sessionError.message.includes("code verifier")) {
+        console.error("PKCE Conflict Detected (Clean your cookies):", sessionError)
+        
+        // We redirect to the error page, but with a specific instruction.
+        // Usually, simply clicking the link a second time works because the first attempt cleared the bad cookie.
+        return NextResponse.redirect(
+            `${requestUrl.origin}/auth/auth-code-error?e=${encodeURIComponent("Browser conflict detected. Please close this tab and click the email invite link one more time.")}`
+        )
+    }
+
+    // 4. Handle other real errors
+    return NextResponse.redirect(
+      `${requestUrl.origin}/auth/auth-code-error?e=${encodeURIComponent(sessionError.message)}`
+    )
+  }
+
+  return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error?e=NoCodeProvided`)
+}
+</file>
+
 <file path="app/trip/page.tsx">
 'use client'
 
@@ -3580,57 +3697,50 @@ function TripPageContent() {
   useEffect(() => {
     if (!tripId) return
     
+    // 1. Listen for Auth Changes (Fixes the "Not Logged In" issue)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user) {
+        // As soon as we detect a user, try to accept the invite
+        acceptInvite(tripId, session.user.id)
+      }
+    })
+
     const init = async () => {
       const { data: tripData, error } = await supabase.from('trips').select('*').eq('id', tripId).single()
       
       if (error) console.error("Error fetching trip:", error)
       if (tripData) {
         setTrip(tripData)
-        await checkAndFixRoster(tripData)
+        // Also check immediately in case session is already there
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) acceptInvite(tripData.id, user.id)
       }
 
       await refreshAll()
       setLoading(false)
     }
     init()
+
+    return () => {
+      subscription.unsubscribe()
+    }
   }, [tripId])
 
-  const checkAndFixRoster = async (tripData: Trip) => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    // 1. AUTO-ACCEPT: If user is "Invited", flip them to "Accepted" just by being here.
+  // Separate function to handle the "Auto-Accept" logic
+  const acceptInvite = async (tId: string, userId: string) => {
+    // 1. Flip status from 'invited' to 'accepted'
     const { error: acceptError } = await supabase
       .from('trip_golfers')
       .update({ status: 'accepted' })
-      .eq('trip_id', tripData.id)
-      .eq('user_id', user.id)
+      .eq('trip_id', tId)
+      .eq('user_id', userId)
       .eq('status', 'invited')
     
-    if (acceptError) console.error("Error accepting invite", acceptError)
-
-    // 2. SELF-HEALING: If Owner is missing from roster, add them.
-    if (user.id !== tripData.owner_id) return
-
-    const { data: existingEntry } = await supabase
-      .from('trip_golfers')
-      .select('id')
-      .eq('trip_id', tripData.id)
-      .eq('user_id', user.id)
-      .single()
-
-    if (!existingEntry) {
-      console.log("Owner missing from roster. Auto-fixing...")
-      const { data: profile } = await supabase.from('profiles').select('full_name, handicap').eq('id', user.id).single()
-      
-      await supabase.from('trip_golfers').insert({
-        trip_id: tripData.id,
-        user_id: user.id,
-        name: profile?.full_name || 'Organizer',
-        handicap: profile?.handicap ? Math.round(profile.handicap) : 0,
-        status: 'accepted'
-      })
-      fetchRoster()
+    if (acceptError) {
+        console.error("Error accepting invite:", acceptError.message)
+    } else {
+        // If successful, refresh the roster to show the green checkmark
+        fetchRoster() 
     }
   }
 
@@ -3795,7 +3905,7 @@ function TripPageContent() {
             tripId={tripId!} 
             golfers={golfers} 
             tripOwnerId={trip?.owner_id} 
-            tripName={trip?.trip_name} // <--- PASSING THE NAME
+            tripName={trip?.trip_name} 
             onUpdate={fetchRoster} 
           />
         )}
@@ -3902,7 +4012,7 @@ export default function TripRoster({
         .from('trip_golfers')
         .insert({
           trip_id: tripId,
-          status: 'accepted', // Default to accepted for manual adds
+          status: null, // <--- CRITICAL FIX: Set to null so "Invite" button appears
           ...payload
         })
       error = insertError
@@ -4015,6 +4125,7 @@ export default function TripRoster({
                 {/* STATUS INDICATOR LOGIC */}
                 <div className="border-l border-slate-100 flex flex-col items-center justify-center">
                   {golfer.status === 'invited' ? (
+                    /* CASE 1: PENDING (Email Sent) */
                     <button onClick={() => handleOpenInvite(golfer.id)} className="flex flex-col items-center hover:opacity-75 group">
                       <div className="flex items-center gap-1 mb-1">
                         <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
@@ -4023,11 +4134,13 @@ export default function TripRoster({
                       <span className="text-[10px] text-slate-400 group-hover:text-amber-500 transition-colors">Resend?</span>
                     </button>
                   ) : golfer.user_id ? ( 
+                    /* CASE 2: VERIFIED (Joined) */
                     <div className="flex flex-col items-center">
                       <span className="material-symbols-outlined text-[#1a4d2e] text-xl">verified</span>
                       <span className="text-[10px] font-bold uppercase tracking-wider text-[#1a4d2e] mt-1">Verified</span>
                     </div>
                   ) : (
+                    /* CASE 3: NO STATUS (Manual Add) */
                     <button onClick={() => handleOpenInvite(golfer.id)} className="flex items-center justify-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-bold uppercase px-3 py-1.5 rounded-full transition-colors">
                       <span className="material-symbols-outlined text-xs">add</span> Invite
                     </button>
@@ -4112,105 +4225,6 @@ export default function TripRoster({
       )}
     </div>
   )
-}
-</file>
-
-<file path="app/api/invite/route.ts">
-import { createClient } from '@supabase/supabase-js'
-import { NextResponse } from 'next/server'
-import { Resend } from 'resend'
-
-const resend = new Resend(process.env.RESEND_API_KEY)
-
-export async function POST(req: Request) {
-  // 1. Init "God Mode" Admin Client
-  const supabaseAdmin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
-
-  try {
-    const { email, tripId, name, golferId, tripName } = await req.json()
-
-    if (!email || !tripId || !golferId) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
-    }
-
-    // 2. Generate the Invite Link (Handles both New and Existing users automatically)
-    // We use 'invite' type which creates a user if they don't exist
-    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'invite',
-      email: email,
-      options: {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/trip?id=${tripId}`,
-        data: { full_name: name } // Stores name in metadata if new user
-      }
-    })
-
-    if (linkError) {
-      console.error('Link Generation Error:', linkError)
-      return NextResponse.json({ error: linkError.message }, { status: 500 })
-    }
-
-    const { user, properties } = linkData
-    const action_link = properties?.action_link
-
-    if (!action_link) {
-      return NextResponse.json({ error: 'Failed to generate action link' }, { status: 500 })
-    }
-
-    // 3. Link the Golfer Row AND set Status to 'invited'
-    if (user) {
-      const { error: updateError } = await supabaseAdmin
-        .from('trip_golfers')
-        .update({ 
-          user_id: user.id,
-          email: email,
-          status: 'invited' // <--- Mark as Pending
-        })
-        .eq('id', golferId)
-
-      if (updateError) throw updateError
-    }
-
-    // 4. Send the Custom Email via Resend
-    // NOTE: Using your verified domain. If this fails, switch back to 'onboarding@resend.dev'
-    const { error: emailError } = await resend.emails.send({
-      from: 'GolfTripHQ <trips@golftriphq.com>', 
-      to: [email],
-      subject: `You're invited to ${tripName || 'a Golf Trip'}!`,
-      html: `
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 12px;">
-          <h1 style="color: #1a4d2e; margin-bottom: 16px;">You're going on a golf trip! ⛳️</h1>
-          <p style="font-size: 16px; color: #374151; line-height: 1.5;">
-            You have been added to the roster for <strong>${tripName || 'an upcoming trip'}</strong>.
-          </p>
-          <p style="font-size: 16px; color: #374151; line-height: 1.5; margin-bottom: 24px;">
-            Click the button below to accept your invite and view the itinerary.
-          </p>
-          <a href="${action_link}" style="display: inline-block; background-color: #d4af37; color: #000; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
-            Join Trip
-          </a>
-          <p style="color: #6b7280; font-size: 12px; margin-top: 30px; border-top: 1px solid #e5e7eb; padding-top: 20px;">
-            If the button doesn't work, copy this link: <br/>
-            <a href="${action_link}" style="color: #1a4d2e;">${action_link}</a>
-          </p>
-        </div>
-      `
-    })
-
-    if (emailError) {
-      console.error('Resend Error:', emailError)
-      return NextResponse.json({ error: 'Failed to send email' }, { status: 500 })
-    }
-
-    return NextResponse.json({ success: true, message: 'Invite sent via Resend' })
-
-  } catch (err: any) {
-    console.error('Server Error:', err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
-  }
 }
 </file>
 
@@ -4612,6 +4626,109 @@ function SocialIcon({ icon }: { icon: string }) {
       <span className="material-symbols-outlined text-lg">{icon}</span>
     </a>
   )
+}
+</file>
+
+<file path="app/api/invite/route.ts">
+import { createClient } from '@supabase/supabase-js'
+import { NextResponse } from 'next/server'
+import { Resend } from 'resend'
+
+const resend = new Resend(process.env.RESEND_API_KEY)
+
+export async function POST(req: Request) {
+  // 1. Init "God Mode" Admin Client
+  const supabaseAdmin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+
+  try {
+    const { email, tripId, name, golferId, tripName } = await req.json()
+
+    if (!email || !tripId || !golferId) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+
+    // --- FIX STARTS HERE ---
+    // We must route through /auth/callback to exchange the token for a session
+    const nextPath = `/trip?id=${tripId}`
+    const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=${encodeURIComponent(nextPath)}`
+    // --- FIX ENDS HERE ---
+
+    // 2. Generate the Invite Link
+    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'invite',
+      email: email,
+      options: {
+        redirectTo: redirectUrl, // <--- Updated to use the callback
+        data: { full_name: name }
+      }
+    })
+
+    if (linkError) {
+      console.error('Link Generation Error:', linkError)
+      return NextResponse.json({ error: linkError.message }, { status: 500 })
+    }
+
+    const { user, properties } = linkData
+    const action_link = properties?.action_link
+
+    if (!action_link) {
+      return NextResponse.json({ error: 'Failed to generate action link' }, { status: 500 })
+    }
+
+    // 3. Link the Golfer Row AND set Status to 'invited'
+    if (user) {
+      const { error: updateError } = await supabaseAdmin
+        .from('trip_golfers')
+        .update({ 
+          user_id: user.id,
+          email: email,
+          status: 'invited'
+        })
+        .eq('id', golferId)
+
+      if (updateError) throw updateError
+    }
+
+    // 4. Send the Custom Email via Resend
+    const { error: emailError } = await resend.emails.send({
+      from: 'GolfTripHQ <trips@golftriphq.com>', 
+      to: [email],
+      subject: `You're invited to ${tripName || 'a Golf Trip'}!`,
+      html: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 12px;">
+          <h1 style="color: #1a4d2e; margin-bottom: 16px;">You're going on a golf trip! ⛳️</h1>
+          <p style="font-size: 16px; color: #374151; line-height: 1.5;">
+            You have been added to the roster for <strong>${tripName || 'an upcoming trip'}</strong>.
+          </p>
+          <p style="font-size: 16px; color: #374151; line-height: 1.5; margin-bottom: 24px;">
+            Click the button below to accept your invite and view the itinerary.
+          </p>
+          <a href="${action_link}" style="display: inline-block; background-color: #d4af37; color: #000; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
+            Join Trip
+          </a>
+          <p style="color: #6b7280; font-size: 12px; margin-top: 30px; border-top: 1px solid #e5e7eb; padding-top: 20px;">
+            If the button doesn't work, copy this link: <br/>
+            <a href="${action_link}" style="color: #1a4d2e;">${action_link}</a>
+          </p>
+        </div>
+      `
+    })
+
+    if (emailError) {
+      console.error('Resend Error:', emailError)
+      return NextResponse.json({ error: 'Failed to send email' }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true, message: 'Invite sent via Resend' })
+
+  } catch (err: any) {
+    console.error('Server Error:', err)
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
 }
 </file>
 

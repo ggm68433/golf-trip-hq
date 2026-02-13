@@ -19,40 +19,53 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // --- FIX STARTS HERE ---
     // We must route through /auth/callback to exchange the token for a session
     const nextPath = `/trip?id=${tripId}`
     const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=${encodeURIComponent(nextPath)}`
-    // --- FIX ENDS HERE ---
 
-    // 2. Generate the Invite Link
-    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+    // --- SMART LINK GENERATION ---
+    let action_link = ''
+    let user_id = ''
+
+    // 2. Try to generate an 'invite' link (Works for NEW users)
+    const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.generateLink({
       type: 'invite',
       email: email,
       options: {
-        redirectTo: redirectUrl, // <--- Updated to use the callback
+        redirectTo: redirectUrl,
         data: { full_name: name }
       }
     })
 
-    if (linkError) {
-      console.error('Link Generation Error:', linkError)
-      return NextResponse.json({ error: linkError.message }, { status: 500 })
+    if (!inviteError && inviteData.properties?.action_link) {
+      // Success: It's a new user
+      action_link = inviteData.properties.action_link
+      user_id = inviteData.user.id
+    } else {
+      // 3. Fallback: If 'invite' failed, assume Existing User and try 'magiclink'
+      console.log(`Invite failed (likely existing user), falling back to magic link for ${email}`)
+      
+      const { data: magicData, error: magicError } = await supabaseAdmin.auth.admin.generateLink({
+        type: 'magiclink',
+        email: email,
+        options: { redirectTo: redirectUrl }
+      })
+
+      if (magicError || !magicData.properties?.action_link) {
+        return NextResponse.json({ error: magicError?.message || 'Failed to generate link' }, { status: 500 })
+      }
+
+      action_link = magicData.properties.action_link
+      user_id = magicData.user.id
     }
 
-    const { user, properties } = linkData
-    const action_link = properties?.action_link
-
-    if (!action_link) {
-      return NextResponse.json({ error: 'Failed to generate action link' }, { status: 500 })
-    }
-
-    // 3. Link the Golfer Row AND set Status to 'invited'
-    if (user) {
+    // 4. Link the Golfer Row AND set Status to 'invited'
+    // We do this regardless of new/existing user so they see the UI update
+    if (user_id) {
       const { error: updateError } = await supabaseAdmin
         .from('trip_golfers')
         .update({ 
-          user_id: user.id,
+          user_id: user_id,
           email: email,
           status: 'invited'
         })
@@ -61,7 +74,7 @@ export async function POST(req: Request) {
       if (updateError) throw updateError
     }
 
-    // 4. Send the Custom Email via Resend
+    // 5. Send the Custom Email via Resend
     const { error: emailError } = await resend.emails.send({
       from: 'GolfTripHQ <trips@golftriphq.com>', 
       to: [email],

@@ -6,15 +6,16 @@ export async function GET(request: Request) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
   
-  // Default to /trip if no 'next' param is provided
-  const next = requestUrl.searchParams.get('next') ?? '/trip'
+  // 1. Capture the original destination (which holds the trip creation params)
+  // Default to /dashboard if nothing is there
+  const next = requestUrl.searchParams.get('next') ?? '/dashboard'
   
-  // 1. Check for basic Supabase Errors
+  // 2. Check for basic Supabase Errors
   const error = requestUrl.searchParams.get('error')
   const errorDescription = requestUrl.searchParams.get('error_description')
   if (error || errorDescription) {
     return NextResponse.redirect(
-      `${requestUrl.origin}/auth/auth-code-error?e=${encodeURIComponent(errorDescription || error || 'Unknown Error')}`
+      `${requestUrl.origin}/auth/auth-code-error?e=${encodeURIComponent(errorDescription || error || 'Unknown Error')}&next=${encodeURIComponent(next)}`
     )
   }
 
@@ -32,31 +33,29 @@ export async function GET(request: Request) {
       }
     )
     
-    // 2. Attempt to Exchange Code for Session
+    // 3. Attempt to Exchange Code for Session
     const { error: sessionError } = await supabase.auth.exchangeCodeForSession(code)
     
     if (!sessionError) {
-      // SUCCESS! Redirect to the intended destination (e.g., the trip page)
+      // SUCCESS! Redirect to the intended destination (e.g. /dashboard?tripName=...)
       return NextResponse.redirect(`${requestUrl.origin}${next}`)
     } 
 
-    // 3. SPECIAL HANDLING: Catch the "PKCE code verifier" error
-    // This happens when you have leftover cookies from a different login attempt.
+    // 4. SPECIAL HANDLING: Catch the "PKCE code verifier" error
     if (sessionError.message.includes("code verifier")) {
         console.error("PKCE Conflict Detected (Clean your cookies):", sessionError)
         
-        // We redirect to the error page, but with a specific instruction.
-        // Usually, simply clicking the link a second time works because the first attempt cleared the bad cookie.
+        // Pass the 'next' param so the retry link works
         return NextResponse.redirect(
-            `${requestUrl.origin}/auth/auth-code-error?e=${encodeURIComponent("Browser conflict detected. Please close this tab and click the email invite link one more time.")}`
+            `${requestUrl.origin}/auth/auth-code-error?e=${encodeURIComponent("Browser conflict detected. Please close this tab and click the email invite link one more time.")}&next=${encodeURIComponent(next)}`
         )
     }
 
-    // 4. Handle other real errors
+    // 5. Handle other real errors
     return NextResponse.redirect(
-      `${requestUrl.origin}/auth/auth-code-error?e=${encodeURIComponent(sessionError.message)}`
+      `${requestUrl.origin}/auth/auth-code-error?e=${encodeURIComponent(sessionError.message)}&next=${encodeURIComponent(next)}`
     )
   }
 
-  return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error?e=NoCodeProvided`)
+  return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error?e=NoCodeProvided&next=${encodeURIComponent(next)}`)
 }
