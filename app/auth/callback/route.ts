@@ -5,20 +5,19 @@ import { type CookieOptions, createServerClient } from '@supabase/ssr'
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
-  const next = requestUrl.searchParams.get('next') ?? '/dashboard'
   
-  // 1. Check for Supabase Errors (e.g. "Token expired", "Invalid token")
+  // Default to /trip if no 'next' param is provided
+  const next = requestUrl.searchParams.get('next') ?? '/trip'
+  
+  // 1. Check for basic Supabase Errors
   const error = requestUrl.searchParams.get('error')
   const errorDescription = requestUrl.searchParams.get('error_description')
-
   if (error || errorDescription) {
-    console.error('Supabase Auth Error:', error, errorDescription)
     return NextResponse.redirect(
-      `${requestUrl.origin}/auth/auth-code-error?e=${encodeURIComponent(errorDescription || error || 'Unknown Supabase Error')}`
+      `${requestUrl.origin}/auth/auth-code-error?e=${encodeURIComponent(errorDescription || error || 'Unknown Error')}`
     )
   }
 
-  // 2. If we have a code, exchange it
   if (code) {
     const cookieStore = await cookies()
     const supabase = createServerClient(
@@ -33,22 +32,31 @@ export async function GET(request: Request) {
       }
     )
     
+    // 2. Attempt to Exchange Code for Session
     const { error: sessionError } = await supabase.auth.exchangeCodeForSession(code)
     
     if (!sessionError) {
-      // SUCCESS: Login complete, go to destination
+      // SUCCESS! Redirect to the intended destination (e.g., the trip page)
       return NextResponse.redirect(`${requestUrl.origin}${next}`)
-    } else {
-      // Exchange failed
-      console.error("Session Exchange Error:", sessionError)
-      return NextResponse.redirect(
-        `${requestUrl.origin}/auth/auth-code-error?e=${encodeURIComponent(sessionError.message)}`
-      )
+    } 
+
+    // 3. SPECIAL HANDLING: Catch the "PKCE code verifier" error
+    // This happens when you have leftover cookies from a different login attempt.
+    if (sessionError.message.includes("code verifier")) {
+        console.error("PKCE Conflict Detected (Clean your cookies):", sessionError)
+        
+        // We redirect to the error page, but with a specific instruction.
+        // Usually, simply clicking the link a second time works because the first attempt cleared the bad cookie.
+        return NextResponse.redirect(
+            `${requestUrl.origin}/auth/auth-code-error?e=${encodeURIComponent("Browser conflict detected. Please close this tab and click the email invite link one more time.")}`
+        )
     }
+
+    // 4. Handle other real errors
+    return NextResponse.redirect(
+      `${requestUrl.origin}/auth/auth-code-error?e=${encodeURIComponent(sessionError.message)}`
+    )
   }
 
-  // 3. Fallback: No code and No error? (This is the mysterious "NoCodeProvided" case)
-  // We'll log the full URL params to see what IS there.
-  console.error("No Code/Error found. Params:", Object.fromEntries(requestUrl.searchParams))
-  return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error?e=NoCodeProvided_CheckLogs`)
+  return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error?e=NoCodeProvided`)
 }
