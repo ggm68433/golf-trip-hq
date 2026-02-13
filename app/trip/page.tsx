@@ -40,57 +40,50 @@ function TripPageContent() {
   useEffect(() => {
     if (!tripId) return
     
+    // 1. Listen for Auth Changes (Fixes the "Not Logged In" issue)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user) {
+        // As soon as we detect a user, try to accept the invite
+        acceptInvite(tripId, session.user.id)
+      }
+    })
+
     const init = async () => {
       const { data: tripData, error } = await supabase.from('trips').select('*').eq('id', tripId).single()
       
       if (error) console.error("Error fetching trip:", error)
       if (tripData) {
         setTrip(tripData)
-        await checkAndFixRoster(tripData)
+        // Also check immediately in case session is already there
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) acceptInvite(tripData.id, user.id)
       }
 
       await refreshAll()
       setLoading(false)
     }
     init()
+
+    return () => {
+      subscription.unsubscribe()
+    }
   }, [tripId])
 
-  const checkAndFixRoster = async (tripData: Trip) => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    // 1. AUTO-ACCEPT: If user is "Invited", flip them to "Accepted" just by being here.
+  // Separate function to handle the "Auto-Accept" logic
+  const acceptInvite = async (tId: string, userId: string) => {
+    // 1. Flip status from 'invited' to 'accepted'
     const { error: acceptError } = await supabase
       .from('trip_golfers')
       .update({ status: 'accepted' })
-      .eq('trip_id', tripData.id)
-      .eq('user_id', user.id)
+      .eq('trip_id', tId)
+      .eq('user_id', userId)
       .eq('status', 'invited')
     
-    if (acceptError) console.error("Error accepting invite", acceptError)
-
-    // 2. SELF-HEALING: If Owner is missing from roster, add them.
-    if (user.id !== tripData.owner_id) return
-
-    const { data: existingEntry } = await supabase
-      .from('trip_golfers')
-      .select('id')
-      .eq('trip_id', tripData.id)
-      .eq('user_id', user.id)
-      .single()
-
-    if (!existingEntry) {
-      console.log("Owner missing from roster. Auto-fixing...")
-      const { data: profile } = await supabase.from('profiles').select('full_name, handicap').eq('id', user.id).single()
-      
-      await supabase.from('trip_golfers').insert({
-        trip_id: tripData.id,
-        user_id: user.id,
-        name: profile?.full_name || 'Organizer',
-        handicap: profile?.handicap ? Math.round(profile.handicap) : 0,
-        status: 'accepted'
-      })
-      fetchRoster()
+    if (acceptError) {
+        console.error("Error accepting invite:", acceptError.message)
+    } else {
+        // If successful, refresh the roster to show the green checkmark
+        fetchRoster() 
     }
   }
 
@@ -255,7 +248,7 @@ function TripPageContent() {
             tripId={tripId!} 
             golfers={golfers} 
             tripOwnerId={trip?.owner_id} 
-            tripName={trip?.trip_name} // <--- PASSING THE NAME
+            tripName={trip?.trip_name} 
             onUpdate={fetchRoster} 
           />
         )}
